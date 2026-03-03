@@ -28,6 +28,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { useState } from "react";
+import { api } from "../lib/api";
 
 export default function PaymentRequest() {
   const [paymentData, setPaymentData] = useState({
@@ -71,8 +72,32 @@ export default function PaymentRequest() {
     return base + additional + materials - discount;
   };
 
-  const sendPaymentRequest = () => {
-    alert(`Payment request of ₹${calculateTotal()} sent to ${paymentData.customerName}`);
+
+
+  const sendPaymentRequest = async () => {
+    try {
+      const payload = {
+        userId: 'test-user-1', // Mock user
+        providerId: 'test-provider-1', // Mock provider
+        amount: calculateTotal(),
+        currency: 'INR',
+        breakdown: {
+          base: parseFloat(paymentData.breakdown.baseService) || 0,
+          additional: parseFloat(paymentData.breakdown.additionalWork) || 0,
+          materials: parseFloat(paymentData.breakdown.materials) || 0,
+          discount: parseFloat(paymentData.breakdown.discount) || 0
+        },
+        status: 'pending',
+        method: paymentData.paymentMethod
+      };
+
+      await api.post('/payments/request', payload);
+      alert(`Payment request of ₹${calculateTotal()} sent successfully!`);
+      window.location.href = '/provider-dashboard';
+    } catch (error) {
+      console.error(error);
+      alert('Failed to send payment request');
+    }
   };
 
   return (

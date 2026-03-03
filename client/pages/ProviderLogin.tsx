@@ -20,10 +20,113 @@ import {
   FileText
 } from "lucide-react";
 import { useState } from "react";
+import { api } from "../lib/api";
 
 export default function ProviderLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    phone: '',
+    address: '',
+    companyName: '',
+    category: '',
+    experience: ''
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    // Validate required fields
+    if (!formData.email || !formData.email.trim()) {
+      setError('Email is required');
+      return;
+    }
+    
+    if (!formData.password || !formData.password.trim()) {
+      setError('Password is required');
+      return;
+    }
+    
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    
+    // Password length validation
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    // Additional validation for provider sign up
+    if (isSignUp) {
+      if (!formData.name || !formData.name.trim()) {
+        setError('Owner name is required');
+        return;
+      }
+      if (!formData.companyName || !formData.companyName.trim()) {
+        setError('Business name is required');
+        return;
+      }
+      if (!formData.category) {
+        setError('Please select a service category');
+        return;
+      }
+    }
+    
+    setLoading(true);
+
+    try {
+      if (isSignUp) {
+        // Provider Registration
+        const res = await api.post('/auth/register', {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          phone: formData.phone,
+          address: formData.address,
+          role: 'provider',
+          providerProfile: {
+            companyName: formData.companyName,
+            category: formData.category,
+            experience: formData.experience
+          }
+        });
+        localStorage.setItem('authToken', res.token);
+        localStorage.setItem('userId', res.user.id);
+        localStorage.setItem('userRole', res.user.role);
+        window.location.href = '/provider-dashboard';
+      } else {
+        // Provider Login
+        const res = await api.post('/auth/login', {
+          email: formData.email,
+          password: formData.password
+        });
+        console.log(res)
+        localStorage.setItem('authToken', res.token);
+        localStorage.setItem('userId', res.user.id);
+        localStorage.setItem('userRole', res.user.role);
+        window.location.href = '/provider-dashboard';
+      }
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-green-50 to-background">
@@ -67,7 +170,13 @@ export default function ProviderLogin() {
                 {isSignUp ? 'Create your provider account to start offering services' : 'Access your provider dashboard'}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
+              {error && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                  {error}
+                </div>
+              )}
+              <form onSubmit={handleSubmit} className="space-y-4">
               {isSignUp && (
                 <>
                   <div>
@@ -79,6 +188,9 @@ export default function ProviderLogin() {
                         type="text"
                         placeholder="Enter your business name"
                         className="pl-10"
+                        value={formData.companyName}
+                        onChange={(e) => handleInputChange('companyName', e.target.value)}
+                        required
                       />
                     </div>
                   </div>
@@ -92,13 +204,16 @@ export default function ProviderLogin() {
                         type="text"
                         placeholder="Enter owner's full name"
                         className="pl-10"
+                        value={formData.name}
+                        onChange={(e) => handleInputChange('name', e.target.value)}
+                        required
                       />
                     </div>
                   </div>
 
                   <div>
                     <Label htmlFor="serviceCategory">Service Category</Label>
-                    <Select>
+                    <Select value={formData.category} onValueChange={(value) => handleInputChange('category', value)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select your primary service" />
                       </SelectTrigger>
@@ -123,6 +238,9 @@ export default function ProviderLogin() {
                     type="email"
                     placeholder="Enter your business email"
                     className="pl-10"
+                    value={formData.email}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -137,6 +255,8 @@ export default function ProviderLogin() {
                       type="tel"
                       placeholder="+91 9876543210"
                       className="pl-10"
+                      value={formData.phone}
+                      onChange={(e) => handleInputChange('phone', e.target.value)}
                     />
                   </div>
                 </div>
@@ -152,6 +272,8 @@ export default function ProviderLogin() {
                       type="text"
                       placeholder="Enter your service area/city"
                       className="pl-10"
+                      value={formData.address}
+                      onChange={(e) => handleInputChange('address', e.target.value)}
                     />
                   </div>
                 </div>
@@ -199,6 +321,9 @@ export default function ProviderLogin() {
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
                     className="pl-10 pr-10"
+                    value={formData.password}
+                    onChange={(e) => handleInputChange('password', e.target.value)}
+                    required
                   />
                   <button
                     type="button"
@@ -236,12 +361,11 @@ export default function ProviderLogin() {
                 </Label>
               </div>
 
-              <Button className="w-full bg-green-600 hover:bg-green-700" asChild>
-                <a href="/provider-dashboard">
-                  <Briefcase className="h-4 w-4 mr-2" />
-                  {isSignUp ? 'Create Provider Account' : 'Sign In to Dashboard'}
-                </a>
+              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
+                <Briefcase className="h-4 w-4 mr-2" />
+                {loading ? 'Please wait...' : (isSignUp ? 'Create Provider Account' : 'Sign In to Dashboard')}
               </Button>
+              </form>
 
               {!isSignUp && (
                 <div className="text-center">

@@ -35,52 +35,92 @@ import {
   Wallet
 } from "lucide-react";
 import { useState } from "react";
+import { useEffect } from "react";
+import { requireAuth, requireRole, getUserId } from "../lib/auth";
+import { api } from "@/lib/api";
 
 export default function ProviderDashboard() {
+  // Authentication check
+  useEffect(() => {
+    requireAuth('/provider-login');
+    requireRole('provider', '/user-login');
+  }, []);
+
   const [activeTab, setActiveTab] = useState("overview");
+  const providerId = getUserId() || "test-provider-1";
+
+  const [providerStats, setProviderStats] = useState({
+    totalJobs: 0,
+    earnings: 0,
+    rating: 0,
+    activeServices: 0
+  });
+  const [selectedService, setSelectedService] = useState(false);
+  // setAddServiceOpen
+  const [addServiceOpen, setAddServiceOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [jobViewOpen, setJobViewOpen] = useState(false);
+  const [editServiceOpen, setEditServiceOpen] = useState(false)
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<any>(null);
+  const [jobActionLoading, setJobActionLoading] = useState(false);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [balance, setBalance] = useState(0);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [schedule, setSchedule] = useState({
+    date: new Date(),
+    time: new Date(),
+    location: "",
+    notes: ""    
+  });
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [defaultMethod, setDefaultMethod] = useState("bank");
+  const [currency, setCurrency] = useState("INR");
+  const [notifSMS, setNotifSMS] = useState(true);
+  const [notifEmail, setNotifEmail] = useState(true);
+  const [notifApp, setNotifApp] = useState(true);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [addPayOpen, setAddPayOpen] = useState(false);
+  const [otpOpen, setOtpOpen] = useState(false);
+  const [kycOpen, setKycOpen] = useState(false);
+
+  useEffect(() => {
+    // Fetch stats
+    api.get(`/provider/dashboard/${providerId}`).then(data => {
+      setProviderStats(data);
+    }).catch(err => console.error(err));
+
+    // Fetch jobs
+    api.get(`/provider/jobs/${providerId}`).then(data => {
+      const mapped = data.map((j: any) => ({
+        id: j._id,
+        service: j.serviceId?.title || j.serviceType || 'Service',
+        customer: j.userId?.name || 'Customer',
+        location: j.userId?.address || 'Location',
+        time: new Date(j.createdAt).toLocaleTimeString(),
+        status: j.status,
+        price: '₹' + (j.estimatedCost || '0'),
+        urgency: 'normal',
+        distance: 'Local'
+      }));
+      setJobs(mapped);
+    }).catch(err => console.error(err));
+  }, [providerId]);
 
   const stats = [
-    { label: "Total Jobs", value: "156", trend: "+12%", icon: Briefcase, color: "text-blue-600" },
-    { label: "This Month Earnings", value: "₹45,200", trend: "+18%", icon: DollarSign, color: "text-green-600" },
-    { label: "Average Rating", value: "4.8", trend: "+0.2", icon: Star, color: "text-yellow-600" },
-    { label: "Active Services", value: "8", trend: "0", icon: Settings, color: "text-purple-600" }
+    { label: "Total Jobs", value: providerStats.totalJobs.toString(), trend: "+12%", icon: Briefcase, color: "text-blue-600" },
+    { label: "This Month Earnings", value: `₹${providerStats.earnings}`, trend: "+18%", icon: DollarSign, color: "text-green-600" },
+    { label: "Average Rating", value: providerStats.rating.toString(), trend: "+0.2", icon: Star, color: "text-yellow-600" },
+    { label: "Active Services", value: providerStats.activeServices.toString(), trend: "0", icon: Settings, color: "text-purple-600" }
   ];
 
+  /*
   const jobRequests = [
-    { 
-      id: 1, 
-      service: "AC Repair", 
-      customer: "Priya Sharma", 
-      location: "Bandra West", 
-      time: "2 hours ago", 
-      status: "pending",
-      price: "₹1200",
-      urgency: "normal",
-      distance: "2.5 km"
-    },
-    { 
-      id: 2, 
-      service: "House Cleaning", 
-      customer: "Raj Patel", 
-      location: "Andheri East", 
-      time: "4 hours ago", 
-      status: "accepted",
-      price: "₹950",
-      urgency: "normal",
-      distance: "4.1 km"
-    },
-    { 
-      id: 3, 
-      service: "Emergency Plumbing", 
-      customer: "Anita Verma", 
-      location: "Powai", 
-      time: "30 min ago", 
-      status: "pending",
-      price: "₹650",
-      urgency: "urgent",
-      distance: "1.8 km"
-    }
+    // ... kept as reference if needed, but replaced by state
   ];
+  */
 
   const upcomingJobs = [
     { id: 1, service: "Deep Cleaning", customer: "Rohit Kumar", time: "Today 3:00 PM", status: "confirmed", notes: "Bring vacuum cleaner" },
@@ -95,44 +135,27 @@ export default function ProviderDashboard() {
     { id: 4, name: "Pest Control", category: "Home Care", price: "₹1200-2500", status: "paused", bookings: 23 }
   ];
 
-  const [jobs, setJobs] = useState(jobRequests);
+  // const [jobs, setJobs] = useState(jobRequests); // ALREADY DEFINED ABOVE
   const [servicesState, setServicesState] = useState(myServices);
   const [upcoming, setUpcoming] = useState(upcomingJobs);
-
-  const [addServiceOpen, setAddServiceOpen] = useState(false);
-  const [editServiceOpen, setEditServiceOpen] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [jobViewOpen, setJobViewOpen] = useState(false);
-
-  const [selectedJob, setSelectedJob] = useState<any>(null);
-  const [selectedService, setSelectedService] = useState<any>(null);
-
-  const [serviceForm, setServiceForm] = useState({ name: "", category: "", price: "₹0-0", status: "active" });
-  const [schedule, setSchedule] = useState({ date: "", time: "" });
-  const [withdrawAmount, setWithdrawAmount] = useState<number | "">("");
-  const [balance, setBalance] = useState(8450);
-
-  // Payments module state
-  const [addPayOpen, setAddPayOpen] = useState(false);
-  const [otpOpen, setOtpOpen] = useState(false);
-  const [kycOpen, setKycOpen] = useState(false);
-  const [invoiceOpen, setInvoiceOpen] = useState(false);
-  const [defaultMethod, setDefaultMethod] = useState('upi');
-  const [currency, setCurrency] = useState('INR');
-  const [notifSMS, setNotifSMS] = useState(true);
-  const [notifEmail, setNotifEmail] = useState(true);
-  const [notifApp, setNotifApp] = useState(true);
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const transactions = [
-    { id: 'TXN-1201', amount: 1200, method: 'UPI (GPay)', date: '2024-12-20', status: 'Paid' },
-    { id: 'TXN-1202', amount: 800, method: 'Card (Visa)', date: '2024-12-22', status: 'Pending' },
-    { id: 'TXN-1203', amount: 2100, method: 'Net Banking', date: '2024-12-24', status: 'Paid' },
-  ];
-
-  const handleAccept = (id: number) => setJobs(prev => prev.map(j => j.id === id ? { ...j, status: "accepted" } : j));
-  const handleDecline = (id: number) => setJobs(prev => prev.filter(j => j.id !== id));
+  const [serviceForm, setServiceForm] = useState<{ name: string; category: string; price: string; status?: string }>({
+    name: "",
+    category: "",
+    price: "₹0-0",
+    status: "active",
+  });
+  
+  const handleAccept = (id: string) => {
+    api.put(`/bookings/${id}/status`, { status: "accepted" }).then(() => {
+        setJobs(prev => prev.map(j => j.id === id ? { ...j, status: "accepted" } : j));
+    });
+  };
+  
+  const handleDecline = (id: string) => {
+    api.put(`/bookings/${id}/status`, { status: "cancelled" }).then(() => {
+        setJobs(prev => prev.filter(j => j.id !== id));
+    });
+  };
   const handleCall = (name: string) => { window.location.href = "tel:+911234567890"; };
   const handleChat = (name: string) => { window.location.href = `/ai-service-assistant?with=${encodeURIComponent(name)}`; };
   const handleAddServiceSubmit = () => {

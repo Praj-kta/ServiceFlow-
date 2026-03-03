@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router-dom";
+import { api } from "../lib/api";
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,9 +119,38 @@ export default function ContractBooking(){
   const next = ()=> setStep((s)=>Math.min(4, s+1));
   const prev = ()=> setStep((s)=>Math.max(1, s-1));
 
-  const confirm = ()=>{
-    const bookingId = 'BK' + Date.now().toString().slice(-6);
-    window.location.href = `/booking-confirmation?booking=${bookingId}&service=${encodeURIComponent(SERVICE_LABELS[service]??'Contract Service')}`;
+
+
+  const confirm = async () => {
+    try {
+      const payload = {
+         userId: 'test-user-1',
+         serviceType: service,
+         projectDetails: {
+           type: projectType,
+           bhk,
+           floors,
+           area,
+           specificTask: selectedTask
+         },
+         scheduling: {
+           startDate: date,
+           preferredTime: time
+         },
+         contact: {
+           name,
+           mobile
+         },
+         status: 'pending'
+      };
+      
+      await api.post('/contracts', payload);
+      const bookingId = 'BK-CONTRACT-' + Date.now(); // Or use ID from response
+      window.location.href = `/booking-confirmation?booking=${bookingId}&service=${encodeURIComponent(SERVICE_LABELS[service]??'Contract Service')}`;
+    } catch (error) {
+      console.error(error);
+      alert('Failed to submit contract inquiry');
+    }
   }
 
   return (

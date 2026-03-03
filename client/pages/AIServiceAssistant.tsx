@@ -50,6 +50,7 @@ import {
   VolumeX
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { api } from "../lib/api";
 import BackButton from "../components/BackButton";
 
 export default function AIServiceAssistant() {
@@ -126,7 +127,9 @@ export default function AIServiceAssistant() {
     }, 1500 + Math.random() * 1000);
   };
 
-  const handleSendMessage = () => {
+
+
+  const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
     const userMessage = {
@@ -137,34 +140,36 @@ export default function AIServiceAssistant() {
     };
 
     setMessages(prev => [...prev, userMessage]);
-    
-    // Simulate AI responses based on message content
-    const message = inputMessage.toLowerCase();
-    let response = '';
-    let suggestions = [];
-
-    if (message.includes('book') || message.includes('service')) {
-      response = 'I can help you book a service! What type of service do you need? Here are the most popular options:';
-      suggestions = ['Home Cleaning', 'Plumbing', 'Electrical', 'AC Repair', 'Car Service'];
-    } else if (message.includes('vastu')) {
-      response = 'I can analyze your home\'s vastu compliance! You can either:\n\n1. Upload your floor plan for instant analysis\n2. Answer a few questions about your home layout\n3. Schedule a consultation with a vastu expert';
-      suggestions = ['Upload Floor Plan', 'Vastu Questions', 'Book Consultation'];
-    } else if (message.includes('cost') || message.includes('price')) {
-      response = 'I can estimate service costs for you! The pricing depends on:\n\n• Type of service\n• Location and accessibility\n• Urgency and timing\n• Provider expertise level\n\nWhat service are you looking to price?';
-      suggestions = ['Home Services', 'Vehicle Services', 'Design Services', 'Emergency Repairs'];
-    } else if (message.includes('provider') || message.includes('find')) {
-      response = 'I\'ll help you find the best service providers! I consider:\n\n• Ratings and reviews\n• Distance from your location\n• Availability and response time\n• Specialization and expertise\n• Pricing and offers\n\nWhat type of provider are you looking for?';
-      suggestions = ['Nearby Providers', 'Top Rated', 'Specialists', 'Budget Friendly'];
-    } else if (message.includes('emergency') || message.includes('urgent')) {
-      response = 'For emergency services, I can connect you with available providers immediately! Emergency services include:\n\n• Plumbing leaks\n• Electrical issues\n• Lock & key problems\n• Appliance breakdowns\n• Vehicle breakdowns';
-      suggestions = ['Call Emergency Plumber', 'Find Electrician Now', 'Urgent Car Service'];
-    } else {
-      response = 'I understand you need help with that! Let me provide you with some relevant options based on what you\'re looking for. Feel free to be more specific about your needs.';
-      suggestions = ['Book a Service', 'Find Providers', 'Get Vastu Advice', 'Maintenance Tips'];
-    }
-
-    simulateTyping(response, suggestions);
     setInputMessage('');
+    setIsTyping(true);
+
+    try {
+      const res = await api.post('/ai/chat', {
+        message: inputMessage,
+        context: { userId: 'test-user-1' } // Mock user ID
+      });
+
+      const botMessage = {
+        id: Date.now() + 1,
+        type: 'bot',
+        content: res.reply,
+        timestamp: new Date(),
+        suggestions: res.suggestions || []
+      };
+
+      setMessages(prev => [...prev, botMessage]);
+    } catch (error) {
+      console.error(error);
+      const errorMessage = {
+        id: Date.now() + 1,
+        type: 'bot',
+        content: "Sorry, I'm having trouble connecting to the server.",
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleQuickAction = (action) => {

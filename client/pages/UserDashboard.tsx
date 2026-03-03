@@ -27,8 +27,17 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { api } from "../lib/api";
+import { useEffect } from "react";
+import { requireAuth, getUserId } from "../lib/auth";
 
-export default function UserDashboard() {
+  export default function UserDashboard() {
+  // Authentication check
+  useEffect(() => {
+    requireAuth('/user-login');
+  }, []);
+
+  const currentUserId = getUserId() || 'test-user-1';
   function ContractServicesGrid() {
     const [selected, setSelected] = useState<string | null>(null);
     const items = [
@@ -77,20 +86,53 @@ export default function UserDashboard() {
       </div>
     );
   }
+
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') ?? 'overview');
+  const userId = currentUserId; // Hardcoded for demo
 
-  const recentBookings = [
-    { id: 1, service: "House Deep Cleaning", provider: "CleanPro Services", date: "Today 2:00 PM", status: "In Progress", price: "₹1200" },
-    { id: 2, service: "AC Repair", provider: "CoolTech Solutions", date: "Yesterday", status: "Completed", price: "₹800" },
-    { id: 3, service: "Plumbing Fix", provider: "RapidFix Plumbers", date: "Dec 20, 2024", status: "Completed", price: "₹600" }
-  ];
+  // State for API data
+  const [dashboardStats, setDashboardStats] = useState({
+    totalBookings: 0,
+    amountSpent: 0,
+    completedServices: 0,
+    favorites: 0
+  });
 
-  const favoriteServices = [
-    { id: 1, name: "House Deep Cleaning", category: "Cleaning", frequency: "Monthly" },
-    { id: 2, name: "AC Maintenance", category: "Appliances", frequency: "Quarterly" },
-    { id: 3, name: "Electrical Safety Check", category: "Electrical", frequency: "Biannually" }
-  ];
+  const [recentBookings, setRecentBookings] = useState<any[]>([]);
+  const [userTransactions, setUserTransactions] = useState<any[]>([]);
+  const [favoriteServices, setFavoriteServices] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Fetch Dashboard Stats
+    api.get(`/user/dashboard/${userId}`).then(data => {
+      setDashboardStats(data);
+    }).catch(err => console.error("Failed to fetch stats", err));
+
+    // Fetch Bookings
+    api.get(`/bookings/user/${userId}`).then(data => {
+      // Map backend booking to frontend format
+      const mapped = data.map((b: any) => ({
+        id: b._id,
+        service: b.serviceId?.title || b.serviceType || 'Service',
+        provider: 'Provider Name', // Populate if available or mock
+        date: new Date(b.date).toLocaleString(),
+        status: b.status,
+        price: '₹' + (b.estimatedCost || '0')
+      }));
+      setRecentBookings(mapped);
+    }).catch(err => console.error("Failed to fetch bookings", err));
+
+    // Fetch Transactions
+    api.get(`/user/transactions/${userId}`).then(data => {
+      setUserTransactions(data);
+    }).catch(err => console.error("Failed to fetch transactions", err));
+
+    // Fetch Favorites
+    api.get(`/user/favorites/${userId}`).then(data => {
+      setFavoriteServices(data);
+    }).catch(err => console.error("Failed to fetch favorites", err));
+  }, [userId]);
 
   type Booking = { id: number; service: string; provider: string; date: string; status: string; price: string };
 
@@ -99,14 +141,6 @@ export default function UserDashboard() {
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [schedule, setSchedule] = useState({ date: "", time: "" });
-
-  // Payments & preferences state
-  type Transaction = { id: string; amount: number; method: string; date: string; status: string };
-  const userTransactions: Transaction[] = [
-    { id: 'INV-2401', amount: 950, method: 'UPI (PhonePe)', date: '2024-12-22', status: 'Paid' },
-    { id: 'INV-2402', amount: 1800, method: 'Card (Mastercard)', date: '2024-12-24', status: 'Paid' },
-    { id: 'INV-2403', amount: 600, method: 'Wallet (Amazon Pay)', date: '2024-12-25', status: 'Pending' },
-  ];
 
   const [addPayOpen, setAddPayOpen] = useState(false);
   const [otpOpen, setOtpOpen] = useState(false);
@@ -187,7 +221,7 @@ export default function UserDashboard() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
+            {/* Overview Tab */}
           <TabsContent value="overview">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
               <Card>
@@ -195,7 +229,7 @@ export default function UserDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Total Bookings</p>
-                      <p className="text-2xl font-bold">24</p>
+                      <p className="text-2xl font-bold">{dashboardStats.totalBookings}</p>
                     </div>
                     <Calendar className="h-8 w-8 text-blue-600" />
                   </div>
@@ -206,7 +240,7 @@ export default function UserDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Amount Spent</p>
-                      <p className="text-2xl font-bold">₹18,400</p>
+                      <p className="text-2xl font-bold">₹{dashboardStats.amountSpent}</p>
                     </div>
                     <Receipt className="h-8 w-8 text-green-600" />
                   </div>
@@ -217,7 +251,7 @@ export default function UserDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Completed Services</p>
-                      <p className="text-2xl font-bold">18</p>
+                      <p className="text-2xl font-bold">{dashboardStats.completedServices}</p>
                     </div>
                     <CheckCircle className="h-8 w-8 text-purple-600" />
                   </div>
@@ -228,7 +262,7 @@ export default function UserDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Favorites</p>
-                      <p className="text-2xl font-bold">12</p>
+                      <p className="text-2xl font-bold">{favoriteServices.length}</p>
                     </div>
                     <Heart className="h-8 w-8 text-red-600" />
                   </div>
