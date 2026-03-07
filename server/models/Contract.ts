@@ -14,4 +14,4 @@ const ContractSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-export const Contract = mongoose.model('Contract', ContractSchema);
+export const Contract = mongoose.models.Contract || mongoose.model('Contract', ContractSchema);

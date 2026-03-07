@@ -69,6 +69,9 @@ export default function ProviderDashboard() {
   const [balance, setBalance] = useState(0);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  // derive pending job notifications
+  const pendingCount = jobs.filter(j => j.status === 'pending').length;
   const [schedule, setSchedule] = useState({
     date: new Date(),
     time: new Date(),
@@ -138,8 +141,9 @@ export default function ProviderDashboard() {
   // const [jobs, setJobs] = useState(jobRequests); // ALREADY DEFINED ABOVE
   const [servicesState, setServicesState] = useState(myServices);
   const [upcoming, setUpcoming] = useState(upcomingJobs);
-  const [serviceForm, setServiceForm] = useState<{ name: string; category: string; price: string; status?: string }>({
+  const [serviceForm, setServiceForm] = useState<{ name: string; description?: string; category: string; price: string; status?: string }>({
     name: "",
+    description: "",
     category: "",
     price: "₹0-0",
     status: "active",
@@ -160,10 +164,41 @@ export default function ProviderDashboard() {
   const handleChat = (name: string) => { window.location.href = `/ai-service-assistant?with=${encodeURIComponent(name)}`; };
   const handleAddServiceSubmit = () => {
     if (!serviceForm.name || !serviceForm.category) return;
-    const newService = { id: Date.now(), name: serviceForm.name, category: serviceForm.category, price: serviceForm.price, status: "active", bookings: 0 };
-    setServicesState(prev => [newService, ...prev]);
-    setServiceForm({ name: "", category: "", price: "₹0-0", status: "active" });
-    setAddServiceOpen(false);
+
+    // build payload to send to backend
+    const payload = {
+      title: serviceForm.name,
+      description: serviceForm.description || '',
+      price: Number(serviceForm.price.replace(/[₹,\s]/g, "")) || 0,
+      category: serviceForm.category,
+    };
+
+    // display payload for debugging/confirmation
+    console.log("creating service with payload", payload);
+
+    api.post('/services', payload)
+      .then((created: any) => {
+        // show what the server returned
+        console.log("service created", created);
+        // update local list with response (fall back to generated id)
+        const entry = {
+          id: created._id || created.id || Date.now(),
+          name: created.title || payload.title,
+          category: created.category || payload.category,
+          price: `₹${created.price || payload.price}`,
+          status: created.status || "active",
+          bookings: 0,
+        };
+        setServicesState(prev => [entry, ...prev]);
+      })
+      .catch(err => {
+        console.error("Failed to create service", err);
+        alert('Error creating service');
+      })
+      .finally(() => {
+        setServiceForm({ name: "", description: "", category: "", price: "₹0-0", status: "active" });
+        setAddServiceOpen(false);
+      });
   };
   const handleEditServiceSubmit = () => {
     if (!selectedService) return;
@@ -195,8 +230,13 @@ export default function ProviderDashboard() {
               <Users className="h-3 w-3 mr-1" />
               Provider Account
             </Badge>
-            <Button variant="outline" size="sm" onClick={() => setNotificationsOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => setNotificationsOpen(true)} className="relative">
               <Bell className="h-4 w-4" />
+              {pendingCount > 0 && (
+                <Badge className="absolute top-0 right-0 translate-x-1 -translate-y-1" size="xs" variant="destructive">
+                  {pendingCount}
+                </Badge>
+              )}
             </Button>
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
@@ -855,6 +895,10 @@ export default function ProviderDashboard() {
                 <Input id="svc-cat" value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} />
               </div>
               <div>
+                <Label htmlFor="svc-desc">Description</Label>
+                <Input id="svc-desc" value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} />
+              </div>
+              <div>
                 <Label htmlFor="svc-price">Price Range</Label>
                 <Input id="svc-price" value={serviceForm.price} onChange={(e) => setServiceForm({ ...serviceForm, price: e.target.value })} />
               </div>
@@ -941,12 +985,17 @@ export default function ProviderDashboard() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Notifications</DialogTitle>
-              <DialogDescription>Recent updates</DialogDescription>
+              <DialogDescription>Recent job requests</DialogDescription>
             </DialogHeader>
             <div className="space-y-3 text-sm">
-              <div className="p-3 border rounded">New job request: Emergency Plumbing • 30 min ago</div>
-              <div className="p-3 border rounded">Payout processed: ₹2,100 • Today</div>
-              <div className="p-3 border rounded">Review received: 5★ from Meera Singh</div>
+              {jobs.filter(j => j.status === 'pending').map(j => (
+                <div key={j.id} className="p-3 border rounded cursor-pointer hover:bg-muted" onClick={() => { setNotificationsOpen(false); setActiveTab('jobs'); }}>
+                  New job request: {j.service} from {j.customer}
+                </div>
+              ))}
+              {pendingCount === 0 && (
+                <div className="p-3 border rounded text-center text-muted-foreground">No new notifications</div>
+              )}
             </div>
           </DialogContent>
         </Dialog>

@@ -1,326 +1,1400 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  MapPin,
+  ArrowLeft,
+  ArrowRight,
+  Calendar as CalendarIcon,
+  Clock,
+  User,
+  Phone,
+  Mail,
+  CreditCard,
+  CheckCircle,
+  Star,
+  Home,
+  AlertTriangle,
+  DollarSign,
+  UserCheck,
+} from "lucide-react";
+import { format } from "date-fns";
+import { api } from "../lib/api";
 
 const steps = [
-  { id: 1, title: "Select Service" },
-  { id: 2, title: "Schedule & Address" },
-  { id: 3, title: "Your Details" },
-  { id: 4, title: "Additional Options" },
-  { id: 5, title: "Review" },
-  { id: 6, title: "Confirmation" },
+  { id: 1, title: "Location Access", icon: MapPin },
+  { id: 2, title: "Select Category", icon: Home },
+  { id: 3, title: "Select Service", icon: Clock },
+  { id: 4, title: "Schedule", icon: CalendarIcon },
+  { id: 5, title: "Your Details", icon: User },
+  { id: 6, title: "Provider Selection", icon: UserCheck },
+  { id: 7, title: "Payment", icon: CreditCard }
 ];
 
 const timeSlots = [
-  { id: "morning", label: "Morning (9AM - 12PM)", price: 0 },
-  { id: "afternoon", label: "Afternoon (12PM - 4PM)", price: 50 },
-  { id: "evening", label: "Evening (4PM - 8PM)", price: 100 },
+  "8:00 AM - 9:00 AM",
+  "9:00 AM - 10:00 AM",
+  "10:00 AM - 11:00 AM",
+  "11:00 AM - 12:00 PM",
+  "12:00 PM - 1:00 PM",
+  "1:00 PM - 2:00 PM",
+  "2:00 PM - 3:00 PM",
+  "3:00 PM - 4:00 PM",
+  "4:00 PM - 5:00 PM",
+  "5:00 PM - 6:00 PM",
 ];
 
-export default function BookingPage() {
+interface Provider {
+  id: number;
+  name: string;
+  rating: number;
+  reviews: number;
+  location: string;
+  responseTime: string;
+  price: string;
+  features: string[];
+  image: string;
+}
+
+export default function BookService() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      window.location.href = '/login-user';
+    }
+  }, []);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
+  const [userLocation, setUserLocation] = useState("");
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedService, setSelectedService] = useState("");
+  const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null);
+  const [isUrgent, setIsUrgent] = useState(false);
 
-  const [formData, setFormData] = useState({
-    serviceType: "",
-    fullAddress: "",
-    pincode: "",
-    timeSlot: "",
-    isUrgent: false,
+  const [allServices, setAllServices] = useState<any[]>([]);
+  const [categoryServices, setCategoryServices] = useState<any[]>([]);
+  const [filteredServices, setFilteredServices] = useState<any[]>([]);
+
+  // Error messages for validation
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const [customerInfo, setCustomerInfo] = useState({
     name: "",
-    mobile: "",
+    phone: "",
     email: "",
-    notes: "",
-    acceptTerms: false,
+    address: "",
   });
 
-  const handleInputChange = (field: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+  const [showLocationDialog, setShowLocationDialog] = useState(false);
+  const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [fieldValidation, setFieldValidation] = useState<Record<string, { isValid: boolean; message: string }>>({});
+
+  // Fetch all services from backend
+  useEffect(() => {
+    api.get<any[]>('/services')
+      .then(data => {
+        setAllServices(data);
+        setFilteredServices(data);
+      })
+      .catch(err => console.error('Failed to fetch services', err));
+  }, []);
+
+  // Validation functions
+  const validateLocationAccess = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!locationPermissionGranted) {
+      newErrors.location = "Location permission is required to proceed. Please grant access.";
+    }
+    
+    if (!userLocation.trim()) {
+      newErrors.userLocation = "Please enter or enable your location.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
-  const validateStep = () => {
-    switch (currentStep) {
+  const validateCategorySelection = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!selectedCategory) {
+      newErrors.category = "Please select a service category.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validateServiceSelection = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!selectedService) {
+      newErrors.service = "Please select a specific service.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validateScheduling = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!selectedDate) {
+      newErrors.date = "Please select a date.";
+    }
+    
+    if (!selectedTimeSlot) {
+      newErrors.timeSlot = "Please select a time slot.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validateCustomerInfo = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!customerInfo.name.trim()) {
+      newErrors.name = "Full name is required.";
+    }
+    
+    const phoneRegex = /^[0-9]{10}$/;
+    if (!customerInfo.phone.trim()) {
+      newErrors.phone = "Phone number is required.";
+    } else if (!phoneRegex.test(customerInfo.phone.replace(/\D/g, ''))) {
+      newErrors.phone = "Please enter a valid 10-digit phone number.";
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!customerInfo.email.trim()) {
+      newErrors.email = "Email is required.";
+    } else if (!emailRegex.test(customerInfo.email)) {
+      newErrors.email = "Please enter a valid email address.";
+    }
+    
+    if (!customerInfo.address.trim()) {
+      newErrors.address = "Service address is required.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validateProviderSelection = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!selectedProviderId) {
+      newErrors.provider = "Please select a service provider.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validatePayment = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!agreeToTerms) {
+      newErrors.terms = "You must agree to the terms and conditions to proceed.";
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Real-time field validation functions
+  const validateNameField = (name: string) => {
+    if (!name.trim()) {
+      return { isValid: false, message: "❌ Name is required. Please enter your full name." };
+    } else if (name.trim().length < 3) {
+      return { isValid: false, message: "❌ Name must be at least 3 characters. Example: John Doe" };
+    } else if (!/^[a-zA-Z\s]+$/.test(name)) {
+      return { isValid: false, message: "❌ Name should only contain letters and spaces. No numbers or special characters." };
+    }
+    return { isValid: true, message: "✅ Valid name format" };
+  };
+
+  const validatePhoneField = (phone: string) => {
+    if (!phone.trim()) {
+      return { isValid: false, message: "❌ Phone number is required. Enter 10 digits." };
+    } else if (!/^\d{10}$/.test(phone.replace(/[\s-]/g, ''))) {
+      return { isValid: false, message: "❌ Please enter exactly 10 digits. Example: 9876543210" };
+    }
+    return { isValid: true, message: "✅ Valid 10-digit phone number" };
+  };
+
+  const validateEmailField = (email: string) => {
+    if (!email.trim()) {
+      return { isValid: false, message: "❌ Email is required. Example: john@example.com" };
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { isValid: false, message: "❌ Invalid email format. Use: name@domain.com" };
+    }
+    return { isValid: true, message: "✅ Valid email address" };
+  };
+
+  const validateAddressField = (address: string) => {
+    if (!address.trim()) {
+      return { isValid: false, message: "❌ Address is required. Example: 123 Main St, New York, NY" };
+    } else if (address.trim().length < 5) {
+      return { isValid: false, message: "❌ Please provide a complete address (at least 5 characters)." };
+    }
+    return { isValid: true, message: "✅ Valid address format" };
+  };
+
+  const handleNameChange = (value: string) => {
+    setCustomerInfo({ ...customerInfo, name: value });
+    const validation = validateNameField(value);
+    setFieldValidation({ ...fieldValidation, name: validation });
+    if (errors.customerName) setErrors({ ...errors, customerName: '' });
+  };
+
+  const handlePhoneChange = (value: string) => {
+    setCustomerInfo({ ...customerInfo, phone: value });
+    const validation = validatePhoneField(value);
+    setFieldValidation({ ...fieldValidation, phone: validation });
+    if (errors.customerPhone) setErrors({ ...errors, customerPhone: '' });
+  };
+
+  const handleEmailChange = (value: string) => {
+    setCustomerInfo({ ...customerInfo, email: value });
+    const validation = validateEmailField(value);
+    setFieldValidation({ ...fieldValidation, email: validation });
+    if (errors.customerEmail) setErrors({ ...errors, customerEmail: '' });
+  };
+
+  const handleAddressChange = (value: string) => {
+    setCustomerInfo({ ...customerInfo, address: value });
+    const validation = validateAddressField(value);
+    setFieldValidation({ ...fieldValidation, address: validation });
+    if (errors.customerAddress) setErrors({ ...errors, customerAddress: '' });
+  };
+
+  // Mock providers filtered by location and service
+  const providers: Provider[] = [
+    {
+      id: 1,
+      name: "ServicePro Experts",
+      rating: 4.8,
+      reviews: 287,
+      location: "2.1 km away",
+      responseTime: "15 mins",
+      price: "Starting ₹400",
+      features: ["24/7 Service", "Free Inspection", "Warranty"],
+      image: "/placeholder.svg"
+    },
+    {
+      id: 2,
+      name: "Reliable Services",
+      rating: 4.7,
+      reviews: 412,
+      location: "1.5 km away",
+      responseTime: "20 mins",
+      price: "Starting ₹350",
+      features: ["Trained Staff", "Transparent Pricing", "Verified"],
+      image: "/placeholder.svg"
+    },
+    {
+      id: 3,
+      name: "Elite Service Team",
+      rating: 4.9,
+      reviews: 589,
+      location: "0.9 km away",
+      responseTime: "10 mins",
+      price: "Starting ₹500",
+      features: ["Expert Technicians", "Same-day Service", "Premium"],
+      image: "/placeholder.svg"
+    }
+  ];
+
+  // Get unique categories from services
+  const uniqueCategories = Array.from(new Set(allServices.map(s => s.category))).filter(Boolean);
+
+  const handleLocationPermission = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          console.log("Location:", position.coords);
+          const { latitude, longitude } = position.coords;
+          setLocationCoords({ lat: latitude, lng: longitude });
+          setShowLocationDialog(true);
+          setErrors({});
+        },
+        (error) => {
+          console.error("Location error:", error);
+          setShowLocationDialog(true);
+          setErrors({ location: "Could not access your location. Please enter it manually." });
+        }
+      );
+    } else {
+      setErrors({ location: "Geolocation is not supported in your browser." });
+    }
+  };
+
+  const getLocationNameFromCoords = async (lat: number, lng: number) => {
+    try {
+      // Using OpenStreetMap's reverse geocoding (free, no API key required)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+      );
+      const data = await response.json();
+      
+      // Extract city/town or area name
+      const address = data.address || {};
+      const locationName = 
+        address.city || 
+        address.town || 
+        address.village || 
+        address.county || 
+        address.suburb ||
+        data.display_name?.split(',')[0] ||
+        'Current Location';
+      
+      return locationName;
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return 'Current Location';
+    }
+  };
+
+  const handleConfirmLocation = async () => {
+    if (locationCoords) {
+      const locationName = await getLocationNameFromCoords(locationCoords.lat, locationCoords.lng);
+      setUserLocation(locationName);
+      setLocationPermissionGranted(true);
+      setShowLocationDialog(false);
+      setErrors({});
+    }
+  };
+
+  const handleCategorySelect = (category: string) => {
+    setSelectedCategory(category);
+    // Filter services by category AND location
+    const filtered = allServices.filter(s => {
+      const matchesCategory = s.category === category;
+      const matchesLocation = !s.areasCovered || s.areasCovered.length === 0 || 
+                             s.areasCovered.some(area => 
+                               userLocation.toLowerCase().includes(area.toLowerCase()) ||
+                               area.toLowerCase().includes(userLocation.toLowerCase())
+                             );
+      return matchesCategory && matchesLocation;
+    });
+    setCategoryServices(filtered);
+    setSelectedService("");
+    setErrors({});
+  };
+
+  const handleNext = () => {
+    let isValid = false;
+    
+    switch(currentStep) {
       case 1:
-        return formData.serviceType !== "";
+        isValid = validateLocationAccess();
+        break;
       case 2:
-        return formData.fullAddress && selectedDate && formData.timeSlot;
+        isValid = validateCategorySelection();
+        break;
       case 3:
-        return formData.name && formData.mobile;
+        isValid = validateServiceSelection();
+        break;
+      case 4:
+        isValid = validateScheduling();
+        break;
+      case 5:
+        isValid = validateCustomerInfo();
+        break;
       case 6:
-        return formData.acceptTerms;
+        isValid = validateProviderSelection();
+        break;
+      case 7:
+        isValid = validatePayment();
+        break;
       default:
-        return true;
+        isValid = true;
+    }
+    
+    if (isValid && currentStep < 7) {
+      setCurrentStep(currentStep + 1);
+      setErrors({});
     }
   };
 
-  const nextStep = () => {
-    if (!validateStep()) {
-      alert("Please complete required fields.");
-      return;
+  const handlePrevious = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
     }
-    setCurrentStep((prev) => prev + 1);
   };
 
-  const prevStep = () => {
-    setCurrentStep((prev) => prev - 1);
+  const getSelectedServiceDetails = () => {
+    return categoryServices.find(service => service._id === selectedService);
   };
 
   const calculateEstimatedCost = () => {
-    let base = 500;
-
-    if (formData.isUrgent) base += 200;
-
-    const slot = timeSlots.find((s) => s.id === formData.timeSlot);
-    if (slot?.price) base += slot.price;
-
-    return base;
+    const serviceDetails = getSelectedServiceDetails();
+    if (!serviceDetails) return 0;
+    const basePrice = serviceDetails.price || 500;
+    return isUrgent ? basePrice + 500 : basePrice;
   };
 
   const handleSubmit = async () => {
     try {
       setLoading(true);
+      const serviceDetails = getSelectedServiceDetails();
 
       const bookingData = {
-        ...formData,
-        date: selectedDate,
+        serviceId: selectedService,
+        serviceTitle: serviceDetails?.title,
+        category: selectedCategory,
+        date: selectedDate ? format(selectedDate, "yyyy-MM-dd") : "",
+        timeSlot: selectedTimeSlot,
+        isUrgent: isUrgent,
+        location: userLocation,
+        fullAddress: customerInfo.address,
+        customerName: customerInfo.name,
+        customerPhone: customerInfo.phone,
+        customerEmail: customerInfo.email,
+        providerId: selectedProviderId,
         estimatedCost: calculateEstimatedCost(),
-        status: "pending",
+        notes: ""
       };
 
-      console.log("Booking Data:", bookingData);
-
-      await new Promise((res) => setTimeout(res, 1500));
-
-      alert("Booking Confirmed!");
-      navigate("/user-dashboard");
+      const saved = await api.post<any>('/bookings', bookingData);
+      alert("Service Booking Confirmed!");
+      navigate('/user-dashboard?tab=bookings');
     } catch (error) {
-      alert("Something went wrong.");
+      console.error('Error creating booking', error);
+      alert("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 1:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Select Service</h2>
-            <select
-              className="w-full border p-2 rounded"
-              value={formData.serviceType}
-              onChange={(e) =>
-                handleInputChange("serviceType", e.target.value)
-              }
+  const renderProgressBar = () => (
+    <div className="mb-8">
+      <div className="flex justify-between items-center mb-4">
+        {steps.map((step) => {
+          const IconComponent = step.icon;
+          const isActive = currentStep === step.id;
+          const isCompleted = currentStep > step.id;
+
+          return (
+            <div key={step.id} className="flex flex-col items-center flex-1">
+              <div
+                className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all ${
+                  isActive
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : isCompleted
+                    ? "border-green-500 bg-green-100"
+                    : "border-gray-300 bg-gray-100"
+                }`}
+              >
+                {isCompleted ? (
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                ) : (
+                  <IconComponent className="h-5 w-5" />
+                )}
+              </div>
+              <p className="text-xs mt-2 text-center font-medium hidden sm:block">{step.title}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderLocationAccess = () => (
+    <div className="space-y-6">
+      <div className="text-center">
+        <div className="inline-block p-4 bg-blue-100 rounded-full mb-4">
+          <MapPin className="h-12 w-12 text-blue-600" />
+        </div>
+        <h2 className="text-3xl font-bold text-foreground mb-2">Enable Location Access</h2>
+        <p className="text-muted-foreground max-w-md mx-auto">
+          We use your location to show available services nearby and connect you with the closest professionals.
+        </p>
+      </div>
+
+      {/* Location Permission Dialog */}
+      <AlertDialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center space-x-2">
+              <MapPin className="h-5 w-5 text-blue-600" />
+              <span>Allow Location Access?</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {locationCoords ? (
+                <div className="space-y-3 mt-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm font-medium text-blue-900 mb-2">📍 Detected Location:</p>
+                    <p className="text-sm text-blue-700 font-semibold">{locationCoords ? 'Loading location name...' : 'Detecting location...'}</p>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    We will use this location to find services and professionals near you. This information helps us provide better and faster service.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 mt-4">
+                  <p className="text-sm text-gray-600">
+                    ServiceFlow needs your location to:
+                  </p>
+                  <ul className="text-sm text-gray-600 space-y-2">
+                    <li>✓ Find services in your area</li>
+                    <li>✓ Show nearby professionals</li>
+                    <li>✓ Provide faster response times</li>
+                  </ul>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex space-x-3 mt-6">
+            <AlertDialogCancel 
+              onClick={() => {
+                setShowLocationDialog(false);
+                setLocationCoords(null);
+              }}
             >
-              <option value="">Select Service</option>
-              <option value="AC Repair">AC Repair</option>
-              <option value="Plumbing">Plumbing</option>
-              <option value="Electrical">Electrical</option>
-            </select>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmLocation}
+              disabled={!locationCoords}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Confirm Location
+            </AlertDialogAction>
           </div>
-        );
+        </AlertDialogContent>
+      </AlertDialog>
 
-      case 2:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">
-              Schedule & Address
-            </h2>
+      <Card className="border-2">
+        <CardContent className="p-8">
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-700">
+                ✓ Find services near you<br />
+                ✓ Faster response times<br />
+                ✓ Better service quality<br />
+                ✓ Location-specific pricing
+              </p>
+            </div>
 
-            <input
-              type="date"
-              className="w-full border p-2 rounded"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-            />
-
-            <select
-              className="w-full border p-2 rounded"
-              value={formData.timeSlot}
-              onChange={(e) =>
-                handleInputChange("timeSlot", e.target.value)
-              }
+            <Button
+              onClick={handleLocationPermission}
+              className="w-full h-12 text-base"
+              size="lg"
+              disabled={locationPermissionGranted}
             >
-              <option value="">Select Time Slot</option>
-              {timeSlots.map((slot) => (
-                <option key={slot.id} value={slot.id}>
-                  {slot.label}
-                </option>
-              ))}
-            </select>
+              <MapPin className="h-5 w-5 mr-2" />
+              {locationPermissionGranted ? 'Location Access Enabled' : 'Enable Location Access'}
+            </Button>
 
-            <textarea
-              placeholder="Full Address"
-              className="w-full border p-2 rounded"
-              value={formData.fullAddress}
-              onChange={(e) =>
-                handleInputChange("fullAddress", e.target.value)
-              }
-            />
+            {locationPermissionGranted && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium text-green-700">
+                  ✓ Location Permission Granted
+                </p>
+                <div className="bg-white border border-green-200 rounded p-3">
+                  <p className="text-sm font-semibold text-green-800">
+                    📍 {userLocation}
+                  </p>
+                </div>
+              </div>
+            )}
 
-            <input
-              type="text"
-              placeholder="Pincode"
-              className="w-full border p-2 rounded"
-              value={formData.pincode}
-              onChange={(e) =>
-                handleInputChange("pincode", e.target.value)
-              }
-            />
-
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.isUrgent}
-                onChange={(e) =>
-                  handleInputChange("isUrgent", e.target.checked)
-                }
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-3">Or enter your location manually</p>
+              <Input
+                placeholder="Enter your city or area"
+                value={userLocation}
+                onChange={(e) => {
+                  setUserLocation(e.target.value);
+                  if (e.target.value.trim()) {
+                    setLocationPermissionGranted(true);
+                    setErrors(prev => {
+                      const newErrors = { ...prev };
+                      delete newErrors.userLocation;
+                      return newErrors;
+                    });
+                  }
+                }}
+                className={`transition-all ${
+                  errors.userLocation ? "bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400" : ""
+                }`}
               />
-              Mark as Urgent (+₹200)
-            </label>
+              {errors.userLocation && (
+                <p className="text-xs text-red-600 mt-1">{errors.userLocation}</p>
+              )}
+            </div>
+
+            {errors.location && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-700">⚠️ {errors.location}</p>
+              </div>
+            )}
+
+            {userLocation && !locationPermissionGranted && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-green-700">
+                  📍 Location: {userLocation}
+                </p>
+              </div>
+            )}
           </div>
-        );
+        </CardContent>
+      </Card>
 
-      case 3:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">
-              Your Details
-            </h2>
+      {!locationPermissionGranted && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-sm text-yellow-700">
+            <AlertTriangle className="h-4 w-4 inline mr-2" />
+            You must grant location permission or enter your location to continue.
+          </p>
+        </div>
+      )}
 
-            <input
-              type="text"
-              placeholder="Full Name"
-              className="w-full border p-2 rounded"
-              value={formData.name}
-              onChange={(e) =>
-                handleInputChange("name", e.target.value)
-              }
+      <Button
+        onClick={handleNext}
+        className="w-full"
+        size="lg"
+        disabled={!locationPermissionGranted && !userLocation.trim()}
+      >
+        Continue
+        <ArrowRight className="h-4 w-4 ml-2" />
+      </Button>
+    </div>
+  );
+
+  const renderCategorySelection = () => (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-foreground mb-2">Select Service Category</h2>
+        <p className="text-muted-foreground">Choose what service you need in <strong>{userLocation}</strong></p>
+      </div>
+
+      {errors.category && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm font-medium text-red-700">
+            ⚠️ {errors.category}
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {uniqueCategories.length > 0 ? (
+          uniqueCategories.map((category) => {
+            const isSelected = selectedCategory === category;
+            const categoryCount = allServices.filter(s => s.category === category).length;
+
+            return (
+              <Card
+                key={category}
+                className={`transition-all border-2 cursor-pointer ${
+                  isSelected
+                    ? "border-primary bg-primary/5"
+                    : "hover:border-primary/50"
+                }`}
+                onClick={() => {
+                  handleCategorySelect(category);
+                  setErrors({});
+                }}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg capitalize">{category}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {categoryCount} services available
+                      </p>
+                    </div>
+                    {isSelected && <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
+        ) : (
+          <div className="col-span-2 text-center py-8">
+            <p className="text-muted-foreground">No categories available. Please check back later.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex space-x-3">
+        <Button onClick={handlePrevious} variant="outline" className="flex-1">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        <Button
+          onClick={handleNext}
+          className="flex-1"
+          disabled={!selectedCategory}
+        >
+          Next
+          <ArrowRight className="h-4 w-4 ml-2" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderServiceSelection = () => (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-foreground mb-2">Select Specific Service</h2>
+        <p className="text-muted-foreground">Choose from available services in {selectedCategory}</p>
+      </div>
+
+      {errors.service && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm font-medium text-red-700">
+            ⚠️ {errors.service}
+          </p>
+        </div>
+      )}
+
+      {categoryServices.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto">
+          {categoryServices.map((service) => {
+            const isSelected = selectedService === service._id;
+
+            return (
+              <Card
+                key={service._id}
+                className={`transition-all border-2 cursor-pointer ${
+                  isSelected
+                    ? "border-primary bg-primary/5"
+                    : "hover:border-primary/50"
+                }`}
+                onClick={() => {
+                  setSelectedService(service._id);
+                  setErrors({});
+                }}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{service.title}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">{service.description}</p>
+                      <div className="flex items-center space-x-3 mt-2">
+                        <Badge variant="outline" className="text-xs">
+                          <DollarSign className="h-3 w-3 mr-1" />
+                          ₹{service.price}
+                        </Badge>
+                        {service.rating && (
+                          <Badge variant="outline" className="text-xs">
+                            <Star className="h-3 w-3 mr-1 text-yellow-500" />
+                            {service.rating}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    {isSelected && <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+          <AlertTriangle className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
+          <p className="text-sm text-yellow-700">
+            No services available in your location for {selectedCategory}. Please try another category or location.
+          </p>
+        </div>
+      )}
+
+      <div className="flex space-x-3">
+        <Button onClick={handlePrevious} variant="outline" className="flex-1">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        <Button
+          onClick={handleNext}
+          className="flex-1"
+          disabled={!selectedService || categoryServices.length === 0}
+        >
+          Next
+          <ArrowRight className="h-4 w-4 ml-2" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderScheduling = () => {
+    const serviceDetails = getSelectedServiceDetails();
+
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-foreground mb-2">Schedule Your Service</h2>
+          <p className="text-muted-foreground">Choose a date and time</p>
+        </div>
+
+        {(errors.date || errors.timeSlot) && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
+            {errors.date && <p className="text-sm font-medium text-red-700">⚠️ {errors.date}</p>}
+            {errors.timeSlot && <p className="text-sm font-medium text-red-700">⚠️ {errors.timeSlot}</p>}
+          </div>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Selected Service</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="font-semibold">{serviceDetails?.title}</p>
+              <p className="text-sm text-muted-foreground mt-1">{serviceDetails?.description}</p>
+              <p className="text-sm font-medium text-blue-600 mt-2">₹{serviceDetails?.price}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <Label className="mb-3 block font-semibold">Select Date *</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  className={`w-full justify-start transition-all ${
+                    errors.date ? 'bg-red-50 border-red-300 hover:bg-red-50' : ''
+                  }`}
+                >
+                  <CalendarIcon className="h-4 w-4 mr-2" />
+                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate || undefined}
+                  onSelect={setSelectedDate}
+                  disabled={(date) => date < new Date()}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div>
+            <Label className="mb-3 block font-semibold">Select Time Slot *</Label>
+            <Select value={selectedTimeSlot} onValueChange={setSelectedTimeSlot}>
+              <SelectTrigger className={`transition-all ${
+                errors.timeSlot ? 'bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400' : ''
+              }`}>
+                <SelectValue placeholder="Choose time" />
+              </SelectTrigger>
+              <SelectContent>
+                {timeSlots.map((slot) => (
+                  <SelectItem key={slot} value={slot}>
+                    {slot}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+          <Checkbox
+            checked={isUrgent}
+            onCheckedChange={() => setIsUrgent(!isUrgent)}
+            id="urgent"
+          />
+          <Label htmlFor="urgent" className="cursor-pointer flex-1">
+            <div className="font-semibold">Add Urgent Service (+₹500)</div>
+            <div className="text-xs text-muted-foreground">Get priority booking and faster response</div>
+          </Label>
+        </div>
+
+        <div className="flex space-x-3">
+          <Button onClick={handlePrevious} variant="outline" className="flex-1">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <Button
+            onClick={handleNext}
+            className="flex-1"
+            disabled={!selectedDate || !selectedTimeSlot}
+          >
+            Next
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCustomerInfo = () => (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-foreground mb-2">Your Details</h2>
+        <p className="text-muted-foreground">Help us contact you about your booking</p>
+      </div>
+
+      {(errors.customerName || errors.customerPhone || errors.customerEmail || errors.customerAddress) && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
+          {errors.customerName && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerName}</p>}
+          {errors.customerPhone && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerPhone}</p>}
+          {errors.customerEmail && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerEmail}</p>}
+          {errors.customerAddress && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerAddress}</p>}
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="p-6 space-y-6">
+          {/* Full Name Field */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="name">Full Name *</Label>
+              {customerInfo.name && (
+                <span className={`text-xs font-medium ${
+                  fieldValidation.name?.isValid ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {fieldValidation.name?.isValid ? '✓ Valid' : '⚠ Invalid'}
+                </span>
+              )}
+            </div>
+            <Input
+              id="name"
+              placeholder="Enter your full name (e.g., John Doe)"
+              value={customerInfo.name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              className={`mt-2 transition-all ${
+                customerInfo.name && !fieldValidation.name?.isValid
+                  ? 'bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400'
+                  : customerInfo.name && fieldValidation.name?.isValid
+                  ? 'bg-green-50 border-green-300 focus:bg-green-50 focus:border-green-400'
+                  : ''
+              }`}
             />
+            {customerInfo.name && (
+              <p className={`text-xs mt-2 font-medium ${
+                fieldValidation.name?.isValid ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {fieldValidation.name?.message}
+              </p>
+            )}
+          </div>
 
-            <input
-              type="text"
-              placeholder="Mobile Number"
-              className="w-full border p-2 rounded"
-              value={formData.mobile}
-              onChange={(e) =>
-                handleInputChange("mobile", e.target.value)
-              }
+          {/* Phone Number Field */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="phone">Phone Number *</Label>
+              {customerInfo.phone && (
+                <span className={`text-xs font-medium ${
+                  fieldValidation.phone?.isValid ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {fieldValidation.phone?.isValid ? '✓ Valid' : '⚠ Invalid'}
+                </span>
+              )}
+            </div>
+            <Input
+              id="phone"
+              type="tel"
+              placeholder="10-digit phone number"
+              value={customerInfo.phone}
+              onChange={(e) => handlePhoneChange(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              className={`mt-2 transition-all ${
+                customerInfo.phone && !fieldValidation.phone?.isValid
+                  ? 'bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400'
+                  : customerInfo.phone && fieldValidation.phone?.isValid
+                  ? 'bg-green-50 border-green-300 focus:bg-green-50 focus:border-green-400'
+                  : ''
+              }`}
             />
+            {customerInfo.phone && (
+              <p className={`text-xs mt-2 font-medium ${
+                fieldValidation.phone?.isValid ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {fieldValidation.phone?.message}
+              </p>
+            )}
+            {!fieldValidation.phone?.isValid && customerInfo.phone && (
+              <div className="mt-2 bg-blue-50 border border-blue-200 rounded p-2">
+                <p className="text-xs text-blue-700">💡 Enter only 10 digits (no spaces, dashes, or +)</p>
+              </div>
+            )}
+          </div>
 
-            <input
+          {/* Email Field */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="email">Email Address *</Label>
+              {customerInfo.email && (
+                <span className={`text-xs font-medium ${
+                  fieldValidation.email?.isValid ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {fieldValidation.email?.isValid ? '✓ Valid' : '⚠ Invalid'}
+                </span>
+              )}
+            </div>
+            <Input
+              id="email"
               type="email"
-              placeholder="Email (Optional)"
-              className="w-full border p-2 rounded"
-              value={formData.email}
-              onChange={(e) =>
-                handleInputChange("email", e.target.value)
-              }
+              placeholder="your.email@example.com"
+              value={customerInfo.email}
+              onChange={(e) => handleEmailChange(e.target.value)}
+              className={`mt-2 transition-all ${
+                customerInfo.email && !fieldValidation.email?.isValid
+                  ? 'bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400'
+                  : customerInfo.email && fieldValidation.email?.isValid
+                  ? 'bg-green-50 border-green-300 focus:bg-green-50 focus:border-green-400'
+                  : ''
+              }`}
             />
+            {customerInfo.email && (
+              <p className={`text-xs mt-2 font-medium ${
+                fieldValidation.email?.isValid ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {fieldValidation.email?.message}
+              </p>
+            )}
+            {!fieldValidation.email?.isValid && customerInfo.email && (
+              <div className="mt-2 bg-blue-50 border border-blue-200 rounded p-2">
+                <p className="text-xs text-blue-700">💡 Format: name@domain.com (e.g., john@gmail.com)</p>
+              </div>
+            )}
           </div>
-        );
 
-      case 4:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">
-              Additional Notes
-            </h2>
-            <textarea
-              placeholder="Describe your issue..."
-              className="w-full border p-2 rounded"
-              value={formData.notes}
-              onChange={(e) =>
-                handleInputChange("notes", e.target.value)
-              }
+          {/* Address Field */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="address">Service Address *</Label>
+              {customerInfo.address && (
+                <span className={`text-xs font-medium ${
+                  fieldValidation.address?.isValid ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {fieldValidation.address?.isValid ? '✓ Valid' : '⚠ Invalid'}
+                </span>
+              )}
+            </div>
+            <Input
+              id="address"
+              placeholder="Street, City, State, Postal Code"
+              value={customerInfo.address}
+              onChange={(e) => handleAddressChange(e.target.value)}
+              className={`mt-2 transition-all ${
+                customerInfo.address && !fieldValidation.address?.isValid
+                  ? 'bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400'
+                  : customerInfo.address && fieldValidation.address?.isValid
+                  ? 'bg-green-50 border-green-300 focus:bg-green-50 focus:border-green-400'
+                  : ''
+              }`}
             />
+            {customerInfo.address && (
+              <p className={`text-xs mt-2 font-medium ${
+                fieldValidation.address?.isValid ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {fieldValidation.address?.message}
+              </p>
+            )}
+            {!fieldValidation.address?.isValid && customerInfo.address && (
+              <div className="mt-2 bg-blue-50 border border-blue-200 rounded p-2">
+                <p className="text-xs text-blue-700">💡 Include street name, city, and state for better service</p>
+              </div>
+            )}
           </div>
-        );
+        </CardContent>
+      </Card>
 
-      case 5:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Review</h2>
-            <p>Service: {formData.serviceType}</p>
-            <p>Date: {selectedDate}</p>
-            <p>Time Slot: {formData.timeSlot}</p>
-            <p>Address: {formData.fullAddress}</p>
-            <p>Estimated Cost: ₹{calculateEstimatedCost()}</p>
+      <div className="flex space-x-3">
+        <Button onClick={handlePrevious} variant="outline" className="flex-1">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+        <Button
+          onClick={handleNext}
+          className="flex-1"
+          disabled={!fieldValidation.name?.isValid || !fieldValidation.phone?.isValid || !fieldValidation.email?.isValid || !fieldValidation.address?.isValid}
+        >
+          Next
+          <ArrowRight className="h-4 w-4 ml-2" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderProviderSelection = () => {
+    const serviceDetails = getSelectedServiceDetails();
+
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-foreground mb-2">Select Service Provider</h2>
+          <p className="text-muted-foreground">Choose a professional to complete your service</p>
+        </div>
+
+        {errors.provider && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm font-medium text-red-700">⚠️ {errors.provider}</p>
           </div>
-        );
+        )}
 
-      case 6:
-        return (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">
-              Confirm Booking
-            </h2>
+        <div className="space-y-4">
+          {providers.map((provider) => {
+            const isSelected = selectedProviderId === provider.id;
 
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={formData.acceptTerms}
-                onChange={(e) =>
-                  handleInputChange(
-                    "acceptTerms",
-                    e.target.checked
-                  )
-                }
-              />
-              I accept terms & conditions
-            </label>
+            return (
+              <Card
+                key={provider.id}
+                className={`transition-all border-2 cursor-pointer ${
+                  isSelected ? "border-primary bg-primary/5" : "hover:border-primary/50"
+                }`}
+                onClick={() => {
+                  setSelectedProviderId(provider.id);
+                  if (errors.provider) setErrors({ ...errors, provider: '' });
+                }}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-start space-x-4">
+                    <Avatar>
+                      <AvatarImage src={provider.image} />
+                      <AvatarFallback>{provider.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-semibold text-lg">{provider.name}</h3>
+                          <div className="flex items-center space-x-4 mt-2">
+                            <div className="flex items-center">
+                              <Star className="h-4 w-4 text-yellow-500 mr-1" />
+                              <span className="font-medium">{provider.rating}</span>
+                              <span className="text-xs text-muted-foreground ml-1">({provider.reviews} reviews)</span>
+                            </div>
+                            <div className="flex items-center text-sm text-muted-foreground">
+                              <MapPin className="h-4 w-4 mr-1" />
+                              {provider.location}
+                            </div>
+                            <div className="flex items-center text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4 mr-1" />
+                              {provider.responseTime}
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected && <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {provider.features.map((feature) => (
+                          <Badge key={feature} variant="secondary" className="text-xs">
+                            {feature}
+                          </Badge>
+                        ))}
+                      </div>
+
+                      <p className="text-sm font-medium text-primary mt-3">{provider.price}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="p-4">
+            <p className="text-sm">
+              <strong>Estimated total:</strong> ₹{calculateEstimatedCost().toLocaleString('en-IN')}
+            </p>
+          </CardContent>
+        </Card>
+
+        <div className="flex space-x-3">
+          <Button onClick={handlePrevious} variant="outline" className="flex-1">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <Button
+            onClick={handleNext}
+            className="flex-1"
+            disabled={!selectedProviderId}
+          >
+            Next
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPayment = () => {
+    const serviceDetails = getSelectedServiceDetails();
+
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-foreground mb-2">Review & Pay</h2>
+          <p className="text-muted-foreground">Confirm details and proceed with payment</p>
+        </div>
+
+        {errors.terms && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm font-medium text-red-700">⚠️ {errors.terms}</p>
           </div>
-        );
-    }
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Booking Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between py-3 border-b">
+              <span className="text-muted-foreground">Service:</span>
+              <span className="font-medium">{serviceDetails?.title}</span>
+            </div>
+            <div className="flex justify-between py-3 border-b">
+              <span className="text-muted-foreground">Category:</span>
+              <span className="font-medium capitalize">{selectedCategory}</span>
+            </div>
+            <div className="flex justify-between py-3 border-b">
+              <span className="text-muted-foreground">Date & Time:</span>
+              <span className="font-medium">
+                {selectedDate ? format(selectedDate, "MMM dd, yyyy") : "N/A"} at {selectedTimeSlot}
+              </span>
+            </div>
+            <div className="flex justify-between py-3 border-b">
+              <span className="text-muted-foreground">Location:</span>
+              <span className="font-medium">{userLocation}</span>
+            </div>
+            <div className="flex justify-between py-3">
+              <span className="text-muted-foreground">Customer:</span>
+              <span className="font-medium">{customerInfo.name}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-green-50 border-green-200">
+          <CardContent className="p-6">
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span>Service Cost:</span>
+                <span className="font-medium">₹{Math.floor(calculateEstimatedCost() * 0.8)}</span>
+              </div>
+              {isUrgent && (
+                <div className="flex justify-between text-orange-600">
+                  <span>Urgent Fee:</span>
+                  <span className="font-medium">+₹500</span>
+                </div>
+              )}
+              <div className="border-t border-green-200 pt-3 flex justify-between text-lg font-bold">
+                <span>Total Amount:</span>
+                <span>₹{calculateEstimatedCost().toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <AlertTriangle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-700">
+              <p className="font-semibold mb-1">Before you confirm:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>The service provider will contact you for final confirmation</li>
+                <li>You can reschedule up to 2 hours before appointment</li>
+                <li>Full refund available if cancelled 4 hours prior</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-start space-x-3 p-4 bg-violet-50 border border-violet-200 rounded-lg">
+          <Checkbox
+            id="terms-payment"
+            checked={agreeToTerms}
+            onCheckedChange={() => {
+              setAgreeToTerms(!agreeToTerms);
+              if (errors.terms) setErrors({ ...errors, terms: '' });
+            }}
+          />
+          <Label htmlFor="terms-payment" className="cursor-pointer text-sm">
+            <div className="font-medium">I confirm this booking and agree to the Terms & Conditions *</div>
+            <div className="text-xs text-muted-foreground mt-1">Payment will be processed after service completion. Cancellations are free within 4 hours of booking.</div>
+          </Label>
+        </div>
+
+        <div className="flex space-x-3">
+          <Button onClick={handlePrevious} variant="outline" className="flex-1">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            className="flex-1"
+            size="lg"
+            disabled={loading || !agreeToTerms}
+          >
+            {loading ? "Processing..." : "Confirm Booking"}
+            <CreditCard className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-3xl mx-auto bg-white p-6 rounded shadow">
-        <h1 className="text-2xl font-bold mb-6 text-center">
-          Service Booking
-        </h1>
-
-        <div className="mb-6">
-          Step {currentStep} of {steps.length}
-        </div>
-
-        {renderStepContent()}
-
-        <div className="flex justify-between mt-8">
-          <button
-            onClick={prevStep}
-            disabled={currentStep === 1}
-            className="px-4 py-2 border rounded"
+    <div className="min-h-screen bg-gradient-to-br from-background via-blue-50 to-background">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <Button
+            variant="ghost"
+            onClick={() => navigate('/user-dashboard')}
+            className="flex items-center space-x-2"
           >
-            Previous
-          </button>
-
-          {currentStep < steps.length ? (
-            <button
-              onClick={nextStep}
-              className="px-4 py-2 bg-blue-600 text-white rounded"
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={!formData.acceptTerms || loading}
-              className="px-4 py-2 bg-green-600 text-white rounded"
-            >
-              {loading ? "Processing..." : "Confirm Booking"}
-            </button>
-          )}
+            <ArrowLeft className="h-5 w-5" />
+            <span>Back</span>
+          </Button>
+          <h1 className="text-2xl font-bold text-foreground">Book Services</h1>
+          <div className="w-20"></div>
         </div>
+      </header>
+
+      <div className="container mx-auto px-4 py-8 max-w-3xl">
+        {/* Progress Bar */}
+        {renderProgressBar()}
+
+        {/* Content */}
+        <Card className="border-2">
+          <CardContent className="p-8">
+            {currentStep === 1 && renderLocationAccess()}
+            {currentStep === 2 && renderCategorySelection()}
+            {currentStep === 3 && renderServiceSelection()}
+            {currentStep === 4 && renderScheduling()}
+            {currentStep === 5 && renderCustomerInfo()}
+            {currentStep === 6 && renderProviderSelection()}
+            {currentStep === 7 && renderPayment()}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

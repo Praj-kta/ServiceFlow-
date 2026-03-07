@@ -3,6 +3,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   ArrowLeft, 
   Mail, 
@@ -25,11 +34,16 @@ export default function UserLogin() {
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     phone: '',
     address: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotError, setForgotError] = useState('');
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -70,15 +84,24 @@ export default function UserLogin() {
         setError('Name is required');
         return;
       }
+
+      // Password confirmation
+      if (formData.confirmPassword !== formData.password) {
+        setError('Passwords do not match');
+        return;
+      }
     }
     
     setLoading(true);
 
     try {
+      const normalizedEmail = formData.email.trim().toLowerCase();
+
       if (isSignUp) {
         // Registration
-        const res = await api.post('/auth/register', {
+        const res: any = await api.post('/auth/register', {
           ...formData,
+          email: normalizedEmail,
           role: 'user'
         });
         localStorage.setItem('authToken', res.token);
@@ -87,8 +110,8 @@ export default function UserLogin() {
         window.location.href = '/user-dashboard';
       } else {
         // Login
-        const res = await api.post('/auth/login', {
-          email: formData.email,
+        const res: any = await api.post('/auth/login', {
+          email: normalizedEmail,
           password: formData.password
         });
         console.log("Login response:", res);
@@ -115,7 +138,7 @@ export default function UserLogin() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">ServiceFlow</h1>
           </div>
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild >
             <a href="/user-dashboard?tab=services">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to All Services
@@ -153,6 +176,7 @@ export default function UserLogin() {
                 </div>
               )}
               <form onSubmit={handleSubmit} className="space-y-4">
+             
               {isSignUp && (
                 <div>
                   <Label htmlFor="name">Full Name</Label>
@@ -258,6 +282,8 @@ export default function UserLogin() {
                       type="password"
                       placeholder="Confirm your password"
                       className="pl-10"
+                      value={formData.confirmPassword}
+                      onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
                     />
                   </div>
                 </div>
@@ -276,14 +302,23 @@ export default function UserLogin() {
               </Button>
               </form>
 
+              {/* forgot password link */}
               {!isSignUp && (
                 <div className="text-center">
-                  <a href="#" className="text-sm text-primary hover:underline">
-                    Forgot your password?
-                  </a>
+                  <button
+                    type="button"
+                    className="text-sm text-primary underline"
+                    onClick={() => {
+                      setShowForgot(true);
+                      setForgotEmail(formData.email || '');
+                      setForgotError('');
+                      setForgotMessage('');
+                    }}
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
               )}
-
               <div className="text-center">
                 <p className="text-sm text-muted-foreground">
                   {isSignUp ? 'Already have an account?' : "Don't have an account?"}
@@ -298,7 +333,57 @@ export default function UserLogin() {
             </CardContent>
           </Card>
 
-          {/* Features for Users */}
+          {/* forgot password dialog */}
+          <AlertDialog open={showForgot} onOpenChange={setShowForgot}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Enter your registered email to receive a password reset link.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="space-y-4">
+                {forgotError && <p className="text-sm text-red-600">{forgotError}</p>}
+                {forgotMessage && <p className="text-sm text-green-600">{forgotMessage}</p>}
+                <div>
+                  <Label htmlFor="forgot-email">Email</Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 mt-6">
+                <AlertDialogCancel onClick={() => setShowForgot(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    setForgotError('');
+                    setForgotMessage('');
+                    if (!forgotEmail.trim()) {
+                      setForgotError('Email is required');
+                      return;
+                    }
+                    try {
+                      await api.post('/auth/forgot-password', { email: forgotEmail });
+                      setForgotMessage('If the email exists, a reset link has been sent');
+                    } catch (err: any) {
+                      setForgotError(err.message || 'Error sending reset link');
+                    }
+                  }}
+                  className="bg-primary text-white"
+                >
+                  Send Link
+                </AlertDialogAction>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
           <div className="mt-8 text-center">
             <h3 className="font-semibold text-foreground mb-4">What you can do as a User:</h3>
             <div className="grid grid-cols-2 gap-4 text-sm">

@@ -165,4 +165,104 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /services/categories:
+ *   get:
+ *     summary: Get all unique service categories
+ *     tags: [Services]
+ *     responses:
+ *       200:
+ *         description: List of service categories
+ */
+router.get('/categories', async (_req: Request, res: Response) => {
+  try {
+    const categories = await Service.distinct('category');
+    const subcategories = await Service.distinct('subcategory');
+    res.json({ categories: categories.filter(Boolean), subcategories: subcategories.filter(Boolean) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching categories', error });
+  }
+});
+
+/**
+ * @swagger
+ * /services/by-category/:category:
+ *   get:
+ *     summary: Get services by category
+ *     tags: [Services]
+ *     parameters:
+ *       - in: path
+ *         name: category
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Services in category
+ */
+router.get('/by-category/:category', async (req: Request, res: Response) => {
+  try {
+    const services = await Service.find({ category: new RegExp(req.params.category, 'i') });
+    res.json(services);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching services', error });
+  }
+});
+
+/**
+ * @swagger
+ * /services/by-location/:location:
+ *   get:
+ *     summary: Get services available in location
+ *     tags: [Services]
+ *     parameters:
+ *       - in: path
+ *         name: location
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Services available in location
+ */
+router.get('/by-location/:location', async (req: Request, res: Response) => {
+  try {
+    const location = req.params.location;
+    const services = await Service.find({
+      areasCovered: { $regex: location, $options: 'i' }
+    });
+    res.json(services);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching services', error });
+  }
+});
+
+/**
+ * @swagger
+ * /services/by-category/:category/subcategories:
+ *   get:
+ *     summary: Get subcategories for a category
+ *     tags: [Services]
+ *     parameters:
+ *       - in: path
+ *         name: category
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of subcategories
+ */
+router.get('/by-category/:category/subcategories', async (req: Request, res: Response) => {
+  try {
+    const subcategories = await Service.distinct('subcategory', {
+      category: new RegExp(req.params.category, 'i')
+    });
+    res.json({ subcategories: subcategories.filter(Boolean) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching subcategories', error });
+  }
+});
+
 export const serviceRouter = router;

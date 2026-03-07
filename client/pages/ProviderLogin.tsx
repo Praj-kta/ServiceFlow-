@@ -4,6 +4,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   ArrowLeft, 
   Mail, 
@@ -20,7 +29,7 @@ import {
   FileText
 } from "lucide-react";
 import { useState } from "react";
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 
 export default function ProviderLogin() {
   const [showPassword, setShowPassword] = useState(false);
@@ -37,6 +46,10 @@ export default function ProviderLogin() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotError, setForgotError] = useState('');
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -90,11 +103,13 @@ export default function ProviderLogin() {
     setLoading(true);
 
     try {
+      const normalizedEmail = formData.email.trim().toLowerCase();
+
       if (isSignUp) {
         // Provider Registration
-        const res = await api.post('/auth/register', {
+        const res: any = await api.post('/auth/register', {
           name: formData.name,
-          email: formData.email,
+          email: normalizedEmail,
           password: formData.password,
           phone: formData.phone,
           address: formData.address,
@@ -111,8 +126,8 @@ export default function ProviderLogin() {
         window.location.href = '/provider-dashboard';
       } else {
         // Provider Login
-        const res = await api.post('/auth/login', {
-          email: formData.email,
+        const res: any = await api.post('/auth/login', {
+          email: normalizedEmail,
           password: formData.password
         });
         console.log(res)
@@ -282,7 +297,7 @@ export default function ProviderLogin() {
               {isSignUp && (
                 <div>
                   <Label htmlFor="experience">Years of Experience</Label>
-                  <Select>
+                  <Select value={formData.experience} onValueChange={(value) => handleInputChange('experience', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select experience level" />
                     </SelectTrigger>
@@ -388,6 +403,58 @@ export default function ProviderLogin() {
               </div>
             </CardContent>
           </Card>
+
+          {/* forgot password dialog */}
+          <AlertDialog open={showForgot} onOpenChange={setShowForgot}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Enter your registered email to receive a password reset link.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="space-y-4">
+                {forgotError && <p className="text-sm text-red-600">{forgotError}</p>}
+                {forgotMessage && <p className="text-sm text-green-600">{forgotMessage}</p>}
+                <div>
+                  <Label htmlFor="forgot-email">Email</Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 mt-6">
+                <AlertDialogCancel onClick={() => setShowForgot(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    setForgotError('');
+                    setForgotMessage('');
+                    if (!forgotEmail.trim()) {
+                      setForgotError('Email is required');
+                      return;
+                    }
+                    try {
+                      await api.post('/auth/forgot-password', { email: forgotEmail });
+                      setForgotMessage('If the email exists, a reset link has been sent');
+                    } catch (err: any) {
+                      setForgotError(err.message || 'Error sending reset link');
+                    }
+                  }}
+                  className="bg-primary text-white"
+                >
+                  Send Link
+                </AlertDialogAction>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Provider Benefits */}
           <div className="mt-8 text-center">

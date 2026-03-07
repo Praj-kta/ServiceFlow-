@@ -14,6 +14,7 @@ import UserLogin from "./pages/UserLogin";
 import ProviderLogin from "./pages/ProviderLogin";
 import UserDashboard from "./pages/UserDashboard";
 import ProviderDashboard from "./pages/ProviderDashboard";
+import ResetPassword from "./pages/ResetPassword";
 import MachineServices from "./pages/MachineServices";
 import Providers from "./pages/Providers";
 import AIFeatures from "./pages/AIFeatures";
@@ -25,6 +26,7 @@ import AutoCalculate from "./pages/AutoCalculate";
 import AISmartMatching from "./pages/AISmartMatching";
 import VastuDetection from "./pages/VastuDetection";
 import VehicleServices from "./pages/VehicleServices";
+import HomeServices from "./pages/HomeServices";
 import DesignRenovationService from "./pages/DesignRenovationService";
 import ContractBooking from "./pages/ContractBooking";
 import PredictiveMaintenance from "./pages/PredictiveMaintenance";
@@ -49,11 +51,13 @@ const App = () => (
           <Route path="/signup-user" element={<UserLogin />} />
           <Route path="/login-provider" element={<ProviderLogin />} />
           <Route path="/signup-provider" element={<ProviderLogin />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/user-dashboard" element={<UserDashboard />} />
           <Route path="/provider-dashboard" element={<ProviderDashboard />} />
           <Route path="/ProviderDashboard" element={<ProviderDashboard />} />
           <Route path="/book-service" element={<BookService />} />
           <Route path="/book-machine-service" element={<BookMachineService />} />
+          <Route path="/home-services" element={<HomeServices />} />
           <Route path="/machine-services" element={<MachineServices />} />
           <Route path="/providers" element={<Providers />} />
           <Route path="/ai-features" element={<AIFeatures />} />
