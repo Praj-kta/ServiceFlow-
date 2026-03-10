@@ -109,6 +109,7 @@ type DashboardStats = {
         date: new Date(b.date).toLocaleString(),
         status: b.status,
         price: b.serviceId?.price ? `₹${b.serviceId.price}` : '₹0',
+        declineNote: b.declineNote || '',
         raw: b
       }));
       setRecentBookings(mapped);
@@ -396,7 +397,7 @@ type DashboardStats = {
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
+            <Button variant="outline" size="sm"  onClick={logout}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -1167,8 +1168,20 @@ type DashboardStats = {
                       <div className="flex items-center space-x-3">
                         <div className="text-right">
                           <div className="font-medium">{booking.price}</div>
-                          <Badge variant={booking.status === 'Completed' ? 'default' : 'secondary'}>
-                            {booking.status}
+                          <Badge
+                            variant={
+                              booking.status === 'completed'
+                                ? 'default'
+                                : booking.status === 'cancelled'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                          >
+                            {booking.status === 'completed'
+                              ? 'Completed'
+                              : booking.status === 'cancelled'
+                              ? 'Cancelled'
+                              : booking.status}
                           </Badge>
                         </div>
                         {booking.status === 'pending' ? (
@@ -1186,6 +1199,9 @@ type DashboardStats = {
                           </Button>
                         )}
                       </div>
+                      {booking.status === 'cancelled' && booking.declineNote && (
+                        <div className="text-xs text-muted-foreground mt-2">Provider note: {booking.declineNote}</div>
+                      )}
                     </div>
                   ))}
                 </div>

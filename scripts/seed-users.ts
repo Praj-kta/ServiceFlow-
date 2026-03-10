@@ -26,6 +26,7 @@ const seedUsers = [
     providerProfile: {
       companyName: 'Elite Home Services',
       category: 'Home Cleaning',
+      categories: ['Home Cleaning'],
       experience: '5 years',
       skills: ['Deep Cleaning', 'Carpet Cleaning', 'Kitchen Cleaning', 'Bathroom Sanitization'],
       rating: 4.8,
@@ -51,6 +52,7 @@ const seedUsers = [
     providerProfile: {
       companyName: 'Quick Fix Plumbing',
       category: 'Plumbing',
+      categories: ['Plumbing'],
       experience: '8 years',
       skills: ['Pipe Repair', 'Leak Detection', 'Bathroom Fitting', 'Water Heater Installation'],
       rating: 4.9,
@@ -68,6 +70,7 @@ const seedUsers = [
     providerProfile: {
       companyName: 'Bright Spark Electrical',
       category: 'Electrical',
+      categories: ['Electrical'],
       experience: '6 years',
       skills: ['Wiring', 'Circuit Repair', 'Lighting Installation', 'Electrical Safety Inspection'],
       rating: 4.7,
@@ -121,7 +124,10 @@ async function seedDatabase() {
       console.log(`  Password: ${user.password}`);
       if (user.providerProfile) {
         console.log(`  Company: ${user.providerProfile.companyName}`);
-        console.log(`  Category: ${user.providerProfile.category}`);
+        const categories = Array.isArray(user.providerProfile.categories)
+          ? user.providerProfile.categories.join(', ')
+          : user.providerProfile.category;
+        console.log(`  Categories: ${categories}`);
       }
     });
     console.log('\n═══════════════════════════════════════════════════════');

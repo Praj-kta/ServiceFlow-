@@ -41,7 +41,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret';
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, phone, address } = req.body;
+    const { name, email, password, role, phone, address, companyName, experience, category, categories } = req.body;
     const normalizedEmail = (email || '').toString().trim().toLowerCase();
 
     if (!normalizedEmail || !password) {
@@ -54,14 +54,30 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({
+    const userData: any = {
       name,
       email: normalizedEmail,
       password: hashedPassword,
       role,
       phone,
-      address
-    });
+      address,
+    };
+
+    if (role === 'provider') {
+      userData.providerProfile = {
+        companyName,
+        experience,
+        // support both old single category field and new multi-category array
+        category: typeof category === 'string' ? category : undefined,
+        categories: Array.isArray(categories)
+          ? categories
+          : category
+          ? [category]
+          : [],
+      };
+    }
+
+    const user = new User(userData);
 
     await user.save();
 

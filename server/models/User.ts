@@ -12,7 +12,9 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpires: { type: Date },
   providerProfile: {
     companyName: String,
+    // Allow either a single category (legacy) or an array of categories so providers can offer multiple service types.
     category: String,
+    categories: [String],
     experience: String,
     skills: [String],
     rating: { type: Number, default: 0 },

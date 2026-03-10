@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+
 import { 
   Home,
   Users,
@@ -36,8 +37,16 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useEffect } from "react";
-import { requireAuth, requireRole, getUserId } from "../lib/auth";
+import { requireAuth, requireRole, getUserId ,logout} from "../lib/auth";
 import { api } from "@/lib/api";
+
+type ServiceFormState = {
+  name: string;
+  description: string;
+  category: string;
+  price: string;
+  status?: string;
+};
 
 export default function ProviderDashboard() {
   // Authentication check
@@ -55,11 +64,13 @@ export default function ProviderDashboard() {
     rating: 0,
     activeServices: 0
   });
-  const [selectedService, setSelectedService] = useState(false);
+  const [selectedService, setSelectedService] = useState<any | null>(null);
   // setAddServiceOpen
   const [addServiceOpen, setAddServiceOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [jobViewOpen, setJobViewOpen] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const [declineNote, setDeclineNote] = useState("");
   const [editServiceOpen, setEditServiceOpen] = useState(false)
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -69,12 +80,16 @@ export default function ProviderDashboard() {
   const [balance, setBalance] = useState(0);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [jobsTab, setJobsTab] = useState<'requested' | 'accepted' | 'rejected'>('requested');
 
   // derive pending job notifications
-  const pendingCount = jobs.filter(j => j.status === 'pending').length;
+  const requestedJobs = jobs.filter((j) => j.status === 'pending');
+  const acceptedJobs = jobs.filter((j) => ['confirmed', 'completed'].includes(j.status));
+  const rejectedJobs = jobs.filter((j) => j.status === 'cancelled');
+  const pendingCount = requestedJobs.length;
   const [schedule, setSchedule] = useState({
-    date: new Date(),
-    time: new Date(),
+    date: new Date().toISOString().slice(0, 10),
+    time: new Date().toISOString().slice(11, 16),
     location: "",
     notes: ""    
   });
@@ -91,26 +106,52 @@ export default function ProviderDashboard() {
 
   useEffect(() => {
     // Fetch stats
-    api.get(`/provider/dashboard/${providerId}`).then(data => {
+    api.get<any>(`/provider/dashboard/${providerId}`).then(data => {
       setProviderStats(data);
     }).catch(err => console.error(err));
 
     // Fetch jobs
-    api.get(`/provider/jobs/${providerId}`).then(data => {
+    api.get<any[]>(`/provider/jobs/${providerId}`).then((data: any[]) => {
       const mapped = data.map((j: any) => ({
-        id: j._id,
+        id: j._id || j.id,
         service: j.serviceId?.title || j.serviceType || 'Service',
         customer: j.userId?.name || 'Customer',
         location: j.userId?.address || 'Location',
         time: new Date(j.createdAt).toLocaleTimeString(),
         status: j.status,
-        price: '₹' + (j.estimatedCost || '0'),
+        price: '₹' + (j.estimatedCost || j.serviceId?.price || '0'),
         urgency: 'normal',
-        distance: 'Local'
+        distance: 'Local',
+        declineNote: j.declineNote || '',
+        cancelledAt: j.cancelledAt ? new Date(j.cancelledAt) : undefined
       }));
       setJobs(mapped);
     }).catch(err => console.error(err));
   }, [providerId]);
+
+  const renderRatingStars = (rating: number) => {
+    const rounded = Math.round(rating * 2) / 2; // round to nearest 0.5
+    const fullStars = Math.floor(rounded);
+    const halfStar = rounded - fullStars >= 0.5;
+
+    return (
+      <div className="flex items-center gap-1">
+        {Array.from({ length: 5 }).map((_, idx) => {
+          const filled = idx < fullStars || (halfStar && idx === fullStars);
+          const isHalf = halfStar && idx === fullStars;
+          return (
+            <Star
+              key={idx}
+              className={`h-4 w-4 ${filled ? 'text-yellow-500' : 'text-muted-foreground'}`}
+              {...(filled ? { fill: 'currentColor' } : {})}
+              style={isHalf ? { clipPath: 'inset(0 50% 0 0)' } : undefined}
+            />
+          );
+        })}
+        <span className="text-sm font-semibold">{rating.toFixed(1)}/5</span>
+      </div>
+    );
+  };
 
   const stats = [
     { label: "Total Jobs", value: providerStats.totalJobs.toString(), trend: "+12%", icon: Briefcase, color: "text-blue-600" },
@@ -131,81 +172,176 @@ export default function ProviderDashboard() {
     { id: 3, service: "Plumbing Fix", customer: "Dev Patel", time: "Tomorrow 2:00 PM", status: "rescheduled", notes: "Kitchen sink issue" }
   ];
 
-  const myServices = [
+  const defaultServices = [
     { id: 1, name: "House Deep Cleaning", category: "Cleaning", price: "₹800-1200", status: "active", bookings: 89 },
     { id: 2, name: "AC Repair & Service", category: "Appliances", price: "₹600-1500", status: "active", bookings: 67 },
     { id: 3, name: "Electrical Installation", category: "Electrical", price: "₹400-1000", status: "active", bookings: 45 },
     { id: 4, name: "Pest Control", category: "Home Care", price: "₹1200-2500", status: "paused", bookings: 23 }
   ];
 
-  // const [jobs, setJobs] = useState(jobRequests); // ALREADY DEFINED ABOVE
-  const [servicesState, setServicesState] = useState(myServices);
+  const mapServiceToUi = (service: any) => ({
+    id: service._id || service.id,
+    name: service.title || service.name || "Untitled Service",
+    category: service.category || "General",
+    price: typeof service.price === "string" ? service.price : service.price != null ? `Rs ${service.price}` : "Rs 0",
+    status: service.status || "active",
+    bookings: service.bookings ?? 0,
+  });
+
+  const [servicesState, setServicesState] = useState<any[]>([]);
   const [upcoming, setUpcoming] = useState(upcomingJobs);
-  const [serviceForm, setServiceForm] = useState<{ name: string; description?: string; category: string; price: string; status?: string }>({
+  const [serviceForm, setServiceForm] = useState<ServiceFormState>({
     name: "",
     description: "",
     category: "",
-    price: "₹0-0",
+    price: "",
     status: "active",
   });
-  
+
+  const [providerCategories, setProviderCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    api.get<any>("/auth/me")
+      .then((data) => {
+        const profile = data?.user?.providerProfile || {};
+        const rawCategories: string[] = Array.isArray(profile.categories) && profile.categories.length
+          ? profile.categories
+          : profile.category
+          ? [profile.category]
+          : [];
+        const categories = Array.from(new Set(rawCategories.map((c) => String(c).trim()).filter(Boolean)));
+        setProviderCategories(categories);
+        if (categories.length === 1) {
+          setServiceForm((prev) => ({ ...prev, category: categories[0] }));
+        }
+      })
+      .catch(() => {
+        // ignore errors; categories are optional
+      });
+
+  }, []);
+
+  useEffect(() => {
+    if (!providerId) return;
+
+    api.get('/services')
+      .then((data: any[]) => {
+        const providerServices = Array.isArray(data)
+          ? data.filter((s) => String(s.providerId) === String(providerId))
+          : [];
+
+        if (providerServices.length) {
+          setServicesState(providerServices.map(mapServiceToUi));
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load services', err);
+      });
+  }, [providerId]);
+
   const handleAccept = (id: string) => {
-    api.put(`/bookings/${id}/status`, { status: "accepted" }).then(() => {
-        setJobs(prev => prev.map(j => j.id === id ? { ...j, status: "accepted" } : j));
+    api.put(`/bookings/${id}/status`, { status: "confirmed" }).then((updated: any) => {
+      setJobs(prev => prev.map(j => j.id === id ? { ...j, status: updated.status } : j));
     });
   };
-  
+
   const handleDecline = (id: string) => {
-    api.put(`/bookings/${id}/status`, { status: "cancelled" }).then(() => {
+    const job = jobs.find((j) => j.id === id);
+    setSelectedJob(job);
+    setDeclineNote('');
+    setDeclineOpen(true);
+  };
+
+  const submitDecline = () => {
+    if (!selectedJob) return;
+
+    api.put(`/bookings/${selectedJob.id}/status`, { status: "cancelled", note: declineNote })
+      .then((updated: any) => {
+        setJobs(prev => prev.map(j => j.id === selectedJob.id ? { ...j, status: updated.status, declineNote: updated.declineNote, cancelledAt: updated.cancelledAt ? new Date(updated.cancelledAt) : undefined } : j));
+        setDeclineOpen(false);
+      })
+      .catch(err => {
+        console.error('Failed to decline booking', err);
+        alert('Failed to decline booking');
+      });
+  };
+
+  const handleDeleteCancelled = (id: string) => {
+    api.delete(`/bookings/${id}`)
+      .then(() => {
         setJobs(prev => prev.filter(j => j.id !== id));
-    });
+      })
+      .catch(err => {
+        console.error('Failed to delete cancelled booking', err);
+        alert('Failed to delete booking');
+      });
   };
   const handleCall = (name: string) => { window.location.href = "tel:+911234567890"; };
   const handleChat = (name: string) => { window.location.href = `/ai-service-assistant?with=${encodeURIComponent(name)}`; };
   const handleAddServiceSubmit = () => {
-    if (!serviceForm.name || !serviceForm.category) return;
+  const name = serviceForm.name.trim();
+  const description = serviceForm.description.trim();
+  const price = serviceForm.price.trim();
+  const category = serviceForm.category;
 
-    // build payload to send to backend
+  // Basic validation
+  if (!name || !description || !price || !category) {
+    alert("Please fill all fields");
+    return;
+  }
+
+  const payload = {
+    title: name,
+    description,
+    price,
+    category,
+  };
+
+  api.post("/services", payload)
+    .then((created: any) => {
+      const entry = mapServiceToUi(created);
+      setServicesState((prev) => [entry, ...prev]);
+    })
+    .catch((err) => {
+      console.error("Failed to create service", err);
+      alert("Error creating service");
+    })
+    .finally(() => {
+      setServiceForm({
+        name: "",
+        description: "",
+        category: "",
+        price: "",
+        status: "active",
+      });
+
+      setAddServiceOpen(false);
+    });
+};
+const handleEditServiceSubmit = () => {
+    if (!selectedService) return;
+
+    const category = String(selectedService.category || "").trim();
+    if (!providerCategories.includes(category)) return;
+
     const payload = {
-      title: serviceForm.name,
-      description: serviceForm.description || '',
-      price: Number(serviceForm.price.replace(/[₹,\s]/g, "")) || 0,
-      category: serviceForm.category,
+      title: selectedService.name,
+      category,
+      price: String(selectedService.price || "").trim(),
     };
 
-    // display payload for debugging/confirmation
-    console.log("creating service with payload", payload);
-
-    api.post('/services', payload)
-      .then((created: any) => {
-        // show what the server returned
-        console.log("service created", created);
-        // update local list with response (fall back to generated id)
-        const entry = {
-          id: created._id || created.id || Date.now(),
-          name: created.title || payload.title,
-          category: created.category || payload.category,
-          price: `₹${created.price || payload.price}`,
-          status: created.status || "active",
-          bookings: 0,
-        };
-        setServicesState(prev => [entry, ...prev]);
+    api.put(`/services/${selectedService.id}`, payload)
+      .then((updated: any) => {
+        const updatedUi = mapServiceToUi(updated);
+        setServicesState(prev => prev.map(s => s.id === updatedUi.id ? updatedUi : s));
+        setEditServiceOpen(false);
       })
       .catch(err => {
-        console.error("Failed to create service", err);
-        alert('Error creating service');
-      })
-      .finally(() => {
-        setServiceForm({ name: "", description: "", category: "", price: "₹0-0", status: "active" });
-        setAddServiceOpen(false);
+        console.error('Failed to update service', err);
+        alert('Error updating service');
       });
   };
-  const handleEditServiceSubmit = () => {
-    if (!selectedService) return;
-    setServicesState(prev => prev.map(s => s.id === selectedService.id ? selectedService : s));
-    setEditServiceOpen(false);
-  };
-  const handleWithdraw = () => {
+const handleWithdraw = () => {
     const amt = Number(withdrawAmount);
     if (!amt || amt <= 0 || amt > balance) { alert("Enter a valid amount inside available balance"); return; }
     setBalance(b => b - amt);
@@ -233,7 +369,7 @@ export default function ProviderDashboard() {
             <Button variant="outline" size="sm" onClick={() => setNotificationsOpen(true)} className="relative">
               <Bell className="h-4 w-4" />
               {pendingCount > 0 && (
-                <Badge className="absolute top-0 right-0 translate-x-1 -translate-y-1" size="xs" variant="destructive">
+                <Badge className="absolute top-0 right-0 translate-x-1 -translate-y-1 text-xs" variant="destructive">
                   {pendingCount}
                 </Badge>
               )}
@@ -241,7 +377,7 @@ export default function ProviderDashboard() {
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
+            <Button variant="outline" size="sm" onClick={logout}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -466,32 +602,59 @@ export default function ProviderDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="text-center">
                   <CardContent className="p-6">
-                    <div className="text-2xl font-bold text-blue-600">12</div>
+                    <div className="text-2xl font-bold text-blue-600">{requestedJobs.length}</div>
                     <p className="text-sm text-muted-foreground">Pending Requests</p>
                   </CardContent>
                 </Card>
                 <Card className="text-center">
                   <CardContent className="p-6">
-                    <div className="text-2xl font-bold text-green-600">8</div>
-                    <p className="text-sm text-muted-foreground">Active Jobs</p>
+                    <div className="text-2xl font-bold text-green-600">{acceptedJobs.length}</div>
+                    <p className="text-sm text-muted-foreground">Accepted Jobs</p>
                   </CardContent>
                 </Card>
                 <Card className="text-center">
                   <CardContent className="p-6">
-                    <div className="text-2xl font-bold text-purple-600">156</div>
-                    <p className="text-sm text-muted-foreground">Completed This Month</p>
+                    <div className="text-2xl font-bold text-red-600">{rejectedJobs.length}</div>
+                    <p className="text-sm text-muted-foreground">Rejected (24h)</p>
                   </CardContent>
                 </Card>
               </div>
 
               <Card>
                 <CardHeader>
-                  <CardTitle>All Job Requests</CardTitle>
-                  <CardDescription>Manage all your job requests and bookings</CardDescription>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <CardTitle>Job Requests</CardTitle>
+                      <CardDescription>Manage all your job requests and bookings</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={jobsTab === 'requested' ? 'default' : 'outline'}
+                        onClick={() => setJobsTab('requested')}
+                      >
+                        Requested
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={jobsTab === 'accepted' ? 'default' : 'outline'}
+                        onClick={() => setJobsTab('accepted')}
+                      >
+                        Accepted
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={jobsTab === 'rejected' ? 'default' : 'outline'}
+                        onClick={() => setJobsTab('rejected')}
+                      >
+                        Rejected
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {jobs.map((job) => (
+                    {(jobsTab === 'requested' ? requestedJobs : jobsTab === 'accepted' ? acceptedJobs : rejectedJobs).map((job) => (
                       <div key={job.id} className="flex items-center justify-between p-4 border rounded-lg">
                         <div className="flex items-center space-x-3">
                           <Avatar className="h-10 w-10">
@@ -505,19 +668,37 @@ export default function ProviderDashboard() {
                               <Clock className="h-3 w-3 ml-3 mr-1" />
                               {job.time}
                             </div>
+                            {jobsTab === 'rejected' && job.declineNote && (
+                              <p className="text-xs text-muted-foreground mt-1">Note: {job.declineNote}</p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center space-x-3">
                           <div className="text-right">
                             <div className="font-medium">{job.price}</div>
-                            <Badge variant={job.status === 'accepted' ? 'default' : 'secondary'}>
-                              {job.status}
+                            <Badge variant={job.status === 'confirmed' ? 'default' : job.status === 'cancelled' ? 'destructive' : 'secondary'}>
+                              {job.status === 'confirmed' ? 'Accepted' : job.status === 'cancelled' ? 'Rejected' : job.status}
                             </Badge>
                           </div>
-                          <Button size="sm" variant="outline" onClick={() => { setSelectedJob(job); setJobViewOpen(true); }}>
-                            <Eye className="h-3 w-3 mr-1" />
-                            View
-                          </Button>
+                          {jobsTab === 'requested' ? (
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" variant="outline" onClick={() => handleDecline(job.id)}>
+                                Decline
+                              </Button>
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleAccept(job.id)}>
+                                Accept
+                              </Button>
+                            </div>
+                          ) : jobsTab === 'accepted' ? (
+                            <Button size="sm" variant="outline" onClick={() => { setSelectedJob(job); setJobViewOpen(true); }}>
+                              <Eye className="h-3 w-3 mr-1" />
+                              View
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="destructive" onClick={() => handleDeleteCancelled(job.id)}>
+                              Delete
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -527,7 +708,8 @@ export default function ProviderDashboard() {
             </div>
           </TabsContent>
 
-          {/* My Services Tab */}
+          
+        {/* My Services Tab */}
           <TabsContent value="services">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -535,34 +717,87 @@ export default function ProviderDashboard() {
                   <CardTitle>My Services</CardTitle>
                   <CardDescription>Manage the services you offer</CardDescription>
                 </div>
+
                 <Button onClick={() => setAddServiceOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Service
                 </Button>
               </CardHeader>
+
               <CardContent>
                 <div className="space-y-4">
-                  {servicesState.map((service) => (
-                    <div key={service.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <h4 className="font-medium">{service.name}</h4>
-                        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                          <span>{service.category}</span>
-                          <span>{service.price}</span>
-                          <span>{service.bookings} bookings</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge variant={service.status === 'active' ? 'default' : 'secondary'}>
-                          {service.status}
-                        </Badge>
-                        <Button size="sm" variant="outline" onClick={() => { setSelectedService(service); setEditServiceOpen(true); }}>
-                          <Edit className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                      </div>
+
+                  {servicesState.length === 0 ? (
+                    <div className="p-4 border rounded-lg text-center text-muted-foreground">
+                      No services found. Add a service to get started.
                     </div>
-                  ))}
+                  ) : (
+
+                    servicesState.map((service) => (
+
+                      <div
+                        key={service.id}
+                        className={`flex items-center justify-between p-4 border rounded-lg
+                        ${service.status === "inactive"
+                          ? "bg-red-50 border-red-200 opacity-70"
+                          : ""
+                        }`}
+                      >
+
+                        {/* Service Info */}
+                        <div>
+                          <h4 className="font-medium">{service.name}</h4>
+
+                          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                            <span>{service.category}</span>
+                            <span>{service.price}</span>
+                            <span>{service.bookings} bookings</span>
+                          </div>
+                        </div>
+
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center space-x-2">
+
+                          {/* Status Toggle */}
+                          <Button
+                            size="sm"
+                            variant={service.status === "active" ? "secondary" : "default"}
+                            onClick={() => toggleServiceStatus(service)}
+                          >
+                            {service.status === "active" ? "Deactivate" : "Activate"}
+                          </Button>
+
+                          {/* Edit */}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedService(service);
+                              setEditServiceOpen(true);
+                            }}
+                          >
+                            <Edit className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+
+                          {/* Delete */}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteService(service.id)}
+                          >
+                            Delete
+                          </Button>
+
+                        </div>
+
+                      </div>
+
+                    ))
+
+                  )}
+
                 </div>
               </CardContent>
             </Card>
@@ -870,7 +1105,7 @@ export default function ProviderDashboard() {
                     <div className="flex items-center justify-between"><span>Account Security</span><Badge variant="secondary">2FA Enabled</Badge></div>
                     <div className="flex items-center justify-between"><span>Profile Visibility</span><Badge variant="secondary">Public</Badge></div>
                     <div className="flex items-center justify-between"><span>Help & Policies</span><Button size="sm" variant="outline">Contact Admin</Button></div>
-                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={() => { window.location.href = '/'; }}>Sign Out</Button></div>
+                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={logout}>Sign Out</Button></div>
                   </CardContent>
                 </Card>
               </div>
@@ -878,39 +1113,151 @@ export default function ProviderDashboard() {
           </TabsContent>
         </Tabs>
 
-        {/* Dialogs */}
-        <Dialog open={addServiceOpen} onOpenChange={setAddServiceOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Add New Service</DialogTitle>
-              <DialogDescription>Create a new service offering</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div>
-                <Label htmlFor="svc-name">Service Name</Label>
-                <Input id="svc-name" value={serviceForm.name} onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} />
-              </div>
-              <div>
-                <Label htmlFor="svc-cat">Category</Label>
-                <Input id="svc-cat" value={serviceForm.category} onChange={(e) => setServiceForm({ ...serviceForm, category: e.target.value })} />
-              </div>
-              <div>
-                <Label htmlFor="svc-desc">Description</Label>
-                <Input id="svc-desc" value={serviceForm.description} onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })} />
-              </div>
-              <div>
-                <Label htmlFor="svc-price">Price Range</Label>
-                <Input id="svc-price" value={serviceForm.price} onChange={(e) => setServiceForm({ ...serviceForm, price: e.target.value })} />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setAddServiceOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddServiceSubmit}>Save</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {/* Add Service Dialog */}
+<Dialog open={addServiceOpen} onOpenChange={setAddServiceOpen}>
+  <DialogContent className="max-w-2xl overflow-hidden p-0">
+    
+    <DialogHeader>
+      <div className="bg-gradient-to-r from-emerald-600 to-green-600 px-6 py-5 text-white">
+        <DialogTitle className="text-xl">Add New Service</DialogTitle>
+        <DialogDescription className="text-emerald-50">
+          Create a professional listing with service category and tentative price range.
+        </DialogDescription>
+      </div>
+    </DialogHeader>
 
-        <Dialog open={editServiceOpen} onOpenChange={setEditServiceOpen}>
+    <div className="space-y-6 px-6 py-6">
+
+      {/* CATEGORY SELECT */}
+      <div className="space-y-2">
+        <Label htmlFor="svc-cat">Service Category</Label>
+
+        <Select
+          value={serviceForm.category}
+          onValueChange={(value) =>
+            setServiceForm({ ...serviceForm, category: value })
+          }
+        >
+          <SelectTrigger id="svc-cat" className="h-11">
+            <SelectValue placeholder="Select category" />
+          </SelectTrigger>
+
+          <SelectContent>
+
+            <SelectItem value="home-services">
+              Home Services
+            </SelectItem>
+
+            <SelectItem value="appliances">
+              Appliance Repair
+            </SelectItem>
+
+            <SelectItem value="vehicle">
+              Vehicle Services
+            </SelectItem>
+
+            <SelectItem value="design">
+              Design & Renovation
+            </SelectItem>
+
+            <SelectItem value="contract">
+              Contract-Based Services
+            </SelectItem>
+
+            <SelectItem value="ai">
+              AI Features
+            </SelectItem>
+
+          </SelectContent>
+        </Select>
+
+        <p className="text-xs text-muted-foreground">
+          Choose the category that best matches your service.
+        </p>
+      </div>
+
+      {/* SERVICE DETAILS */}
+      <div className="grid grid-cols-1 gap-4">
+
+        {/* SERVICE NAME */}
+        <div className="space-y-2">
+          <Label htmlFor="svc-name">Service Name</Label>
+          <Input
+            id="svc-name"
+            className="h-11"
+            placeholder="Example: AC Repair and Maintenance"
+            value={serviceForm.name}
+            onChange={(e) =>
+              setServiceForm({ ...serviceForm, name: e.target.value })
+            }
+          />
+        </div>
+
+        {/* DESCRIPTION */}
+        <div className="space-y-2">
+          <Label htmlFor="svc-desc">Description</Label>
+          <Input
+            id="svc-desc"
+            className="h-11"
+            placeholder="What is included in this service"
+            value={serviceForm.description}
+            onChange={(e) =>
+              setServiceForm({
+                ...serviceForm,
+                description: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        {/* PRICE */}
+        <div className="space-y-2">
+          <Label htmlFor="svc-price">Tentative Price Range</Label>
+          <Input
+            id="svc-price"
+            className="h-11"
+            placeholder="Example: Rs 800 - Rs 1500"
+            value={serviceForm.price}
+            onChange={(e) =>
+              setServiceForm({ ...serviceForm, price: e.target.value })
+            }
+          />
+
+          <p className="text-xs text-muted-foreground">
+            Price is stored as text so you can provide a flexible range.
+          </p>
+        </div>
+
+      </div>
+
+      {/* ACTION BUTTONS */}
+      <div className="flex justify-end gap-2 border-t pt-4">
+
+        <Button
+          variant="outline"
+          onClick={() => setAddServiceOpen(false)}
+        >
+          Cancel
+        </Button>
+
+        <Button
+          onClick={handleAddServiceSubmit}
+          disabled={
+            !serviceForm.category ||
+            !serviceForm.name.trim() ||
+            !serviceForm.description.trim() ||
+            !serviceForm.price.trim()
+          }
+        >
+          Save Service
+        </Button>
+
+      </div>
+
+    </div>
+  </DialogContent>
+</Dialog>
+<Dialog open={editServiceOpen} onOpenChange={setEditServiceOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Edit Service</DialogTitle>
@@ -924,7 +1271,29 @@ export default function ProviderDashboard() {
                 </div>
                 <div>
                   <Label htmlFor="edit-cat">Category</Label>
-                  <Input id="edit-cat" value={selectedService.category} onChange={(e) => setSelectedService({ ...selectedService, category: e.target.value })} />
+                  {providerCategories.length === 1 ? (
+                    <Input
+                      id="edit-cat"
+                      value={selectedService.category || providerCategories[0]}
+                      readOnly
+                      className="bg-muted/10"
+                    />
+                  ) : providerCategories.length > 1 ? (
+                    <Select value={selectedService.category} onValueChange={(value) => setSelectedService({ ...selectedService, category: value })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providerCategories.map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input id="edit-cat" value={selectedService.category} onChange={(e) => setSelectedService({ ...selectedService, category: e.target.value })} />
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="edit-price">Price Range</Label>
@@ -971,7 +1340,7 @@ export default function ProviderDashboard() {
             <div className="space-y-3">
               <div>
                 <Label htmlFor="wd-amt">Amount</Label>
-                <Input id="wd-amt" type="number" value={withdrawAmount as any} onChange={(e) => setWithdrawAmount(e.target.value === '' ? '' : Number(e.target.value))} />
+                <Input id="wd-amt" type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" onClick={() => setWithdrawOpen(false)}>Cancel</Button>
@@ -1010,17 +1379,48 @@ export default function ProviderDashboard() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">{selectedJob.service}</div>
-                  <Badge variant={selectedJob.status === 'accepted' ? 'default' : 'secondary'}>{selectedJob.status}</Badge>
+                  <Badge variant={selectedJob.status === 'confirmed' ? 'default' : selectedJob.status === 'cancelled' ? 'destructive' : 'secondary'}>
+                    {selectedJob.status === 'confirmed' ? 'Accepted' : selectedJob.status === 'cancelled' ? 'Rejected' : selectedJob.status}
+                  </Badge>
                 </div>
                 <div className="text-sm text-muted-foreground">Customer: {selectedJob.customer}</div>
                 <div className="text-sm text-muted-foreground">Location: {selectedJob.location}</div>
                 <div className="text-sm">Price: {selectedJob.price}</div>
+                {selectedJob.status === 'cancelled' && selectedJob.declineNote && (
+                  <div className="text-sm text-muted-foreground">Note: {selectedJob.declineNote}</div>
+                )}
                 <div className="flex gap-2 pt-2">
                   <Button variant="outline" className="text-red-600 border-red-200" onClick={() => { handleDecline(selectedJob.id); setJobViewOpen(false); }}>Decline</Button>
                   <Button onClick={() => { handleAccept(selectedJob.id); setJobViewOpen(false); }}>Accept</Button>
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={declineOpen} onOpenChange={setDeclineOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Decline Job Request</DialogTitle>
+              <DialogDescription>
+                Optional note to send to the customer (they will see this in their booking history).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="decline-note">Note (optional)</Label>
+                <Input
+                  id="decline-note"
+                  value={declineNote}
+                  onChange={(e) => setDeclineNote(e.target.value)}
+                  placeholder="Reason for declining (e.g., unavailable time slot)"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setDeclineOpen(false)}>Cancel</Button>
+                <Button onClick={submitDecline}>Send & Decline</Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -1116,3 +1516,11 @@ export default function ProviderDashboard() {
     </div>
   );
 }
+
+
+
+
+
+
+
+

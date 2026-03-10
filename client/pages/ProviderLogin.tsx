@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -41,7 +42,7 @@ export default function ProviderLogin() {
     phone: '',
     address: '',
     companyName: '',
-    category: '',
+    categories: [] as string[],
     experience: ''
   });
   const [error, setError] = useState('');
@@ -51,7 +52,7 @@ export default function ProviderLogin() {
   const [forgotMessage, setForgotMessage] = useState('');
   const [forgotError, setForgotError] = useState('');
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | string[]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setError('');
   };
@@ -94,8 +95,8 @@ export default function ProviderLogin() {
         setError('Business name is required');
         return;
       }
-      if (!formData.category) {
-        setError('Please select a service category');
+      if (!formData.categories?.length) {
+        setError('Please select at least one service category');
         return;
       }
     }
@@ -116,7 +117,7 @@ export default function ProviderLogin() {
           role: 'provider',
           providerProfile: {
             companyName: formData.companyName,
-            category: formData.category,
+            categories: formData.categories,
             experience: formData.experience
           }
         });
@@ -227,19 +228,43 @@ export default function ProviderLogin() {
                   </div>
 
                   <div>
-                    <Label htmlFor="serviceCategory">Service Category</Label>
-                    <Select value={formData.category} onValueChange={(value) => handleInputChange('category', value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your primary service" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="home-services">Home Services</SelectItem>
-                        <SelectItem value="appliances">Appliance Repair</SelectItem>
-                        <SelectItem value="vehicle">Vehicle Services</SelectItem>
-                        <SelectItem value="design">Design & Renovation</SelectItem>
-                        <SelectItem value="multiple">Multiple Services</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>Service Categories</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-between text-left"
+                        >
+                          {formData.categories.length
+                            ? formData.categories.join(', ')
+                            : 'Select service categories'}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {[
+                          { value: 'home-services', label: 'Home Services' },
+                          { value: 'appliances', label: 'Appliance Repair' },
+                          { value: 'vehicle', label: 'Vehicle Services' },
+                          { value: 'design', label: 'Design & Renovation' },
+                          { value: 'contract', label: 'Contract-Based' },
+                          { value: 'ai', label: 'AI Features' },
+                        ].map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={formData.categories.includes(option.value)}
+                            onCheckedChange={(checked) => {
+                              const nextCategories = checked
+                                ? [...formData.categories, option.value]
+                                : formData.categories.filter((c) => c !== option.value);
+                              handleInputChange('categories', nextCategories);
+                            }}
+                          >
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </>
               )}
