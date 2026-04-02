@@ -33,8 +33,12 @@ function expressPlugin(): Plugin {
   return {
     name: "express-plugin",
     apply: "serve",
+
     async configureServer(server) {
-      const { createServer } = await import("./server");
+
+      if (server.config.command !== "serve") return;
+
+      const { createServer } = await import("./server/index.ts");
 
       const app = createServer();
 
