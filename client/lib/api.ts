@@ -1,5 +1,5 @@
-export const BASE_URL = `http://localhost:8080/api`;
-// Change port if your backend runs on different port
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL;// Change port if your backend runs on different port
+console.log("API Base URL:", BASE_URL);
 
 type RequestMethod = "GET" | "POST" | "PUT" | "DELETE";
 

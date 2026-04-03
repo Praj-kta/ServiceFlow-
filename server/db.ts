@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
 
 export async function connectDB() {
+  const MONGODB_URI = process.env.VITE_MONGODB_URI || 'mongodb://localhost:27017/serviceflow';
+
   try {
-    const mongoURI = process.env.MONGODB_URI;
+    const mongoURI = MONGODB_URI;
     if (!mongoURI) {
       console.warn("MONGODB_URI not found in environment variables. Skipped database connection.");
       return;
