@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 export async function connectDB() {
-  const MONGODB_URI = process.env.VITE_MONGODB_URI;
+  const MONGODB_URI = import.meta.env.VITE_API_BASE_URL;
   console.log('🔗 MongoDB URI:', MONGODB_URI);
 
   try {

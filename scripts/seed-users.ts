@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { User } from '../server/models/User';
-import dotenv from 'dotenv';
 
-dotenv.config();
-
-const MONGODB_URI = process.env.VITE_MONGODB_URI
+const MONGODB_URI = import.meta.env.VITE_API_BASE_URL;
 console.log('🔗 MongoDB URI:', MONGODB_URI);
+
+if (!MONGODB_URI) {
+  console.warn("MONGODB_URI not found in environment variables. Skipped database connection.");
+  process.exit(1);
+}
 
 const seedUsers = [
   {
