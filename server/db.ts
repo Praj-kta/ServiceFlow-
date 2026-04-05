@@ -1,20 +1,23 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export async function connectDB() {
-  const MONGODB_URI = import.meta.env.VITE_API_BASE_URL;
-  console.log('🔗 MongoDB URI:', MONGODB_URI);
+  const MONGODB_URI = process.env.MONGO_URI;
+
+  console.log("🔗 MongoDB URI:", MONGODB_URI);
+
+  if (!MONGODB_URI) {
+    console.error("❌ MONGO_URI not found in environment variables");
+    process.exit(1);
+  }
 
   try {
-    const mongoURI = MONGODB_URI;
-    if (!mongoURI) {
-      console.warn("MONGODB_URI not found in environment variables. Skipped database connection.");
-      return;
-    }
-
-    await mongoose.connect(mongoURI);
-    console.log("Connected to MongoDB successfully");
+    await mongoose.connect(MONGODB_URI);
+    console.log("✅ Connected to MongoDB successfully");
   } catch (error) {
-    console.error("Error connecting to MongoDB:", error);
-    // process.exit(1); // Don't exit on DB failure for debugging
+    console.error("❌ Error connecting to MongoDB:", error);
+    process.exit(1);
   }
 }
