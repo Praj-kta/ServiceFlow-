@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 
 export async function connectDB() {
-  const MONGODB_URI = process.env.VITE_MONGODB_URI || 'mongodb://localhost:27017/serviceflow';
+  const MONGODB_URI = process.env.VITE_MONGODB_URI;
+  console.log('🔗 MongoDB URI:', MONGODB_URI);
 
   try {
     const mongoURI = MONGODB_URI;

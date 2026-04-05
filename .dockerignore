@@ -59,3 +59,4 @@ packages/vcp-common/_tests_/dataset-ranking.csv
 node_modules/
 Dockerfile
 .gitignore
+docker-compose.yml
