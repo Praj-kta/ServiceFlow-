@@ -20,7 +20,9 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${BASE_URL}/api/${endpoint}`, {
+  console.log(`Making ${method} request to ${BASE_URL}${endpoint}`);
+  
+  const response = await fetch(`${BASE_URL}${endpoint}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
