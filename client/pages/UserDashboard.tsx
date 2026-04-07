@@ -23,47 +23,13 @@ import {
   Home as HomeIcon,
   CheckCircle,
   Eye,
-  Car
+  Car,Menu, X
 } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useEffect } from "react";
-import { requireAuth, getUserId, logout } from "../lib/auth";
-
-const timeSlots = [
-  { id: "morning", label: "Morning (9AM - 12PM)", price: 0 },
-  { id: "afternoon", label: "Afternoon (12PM - 4PM)", price: 50 },
-  { id: "evening", label: "Evening (4PM - 8PM)", price: 100 },
-];
-
-type UserProfile = {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  address?: string;
-  createdAt?: string;
-};
-
-type MeResponse = {
-  user: {
-    _id?: string;
-    id?: string;
-    name?: string;
-    email?: string;
-    phone?: string;
-    address?: string;
-    createdAt?: string;
-  };
-};
-
-type DashboardStats = {
-  totalBookings: number;
-  amountSpent: number;
-  completedServices: number;
-  favorites: number;
-};
+import { requireAuth, getUserId } from "../lib/auth";
 
   export default function UserDashboard() {
   // Authentication check
@@ -272,8 +238,11 @@ type DashboardStats = {
   const [notifSMS, setNotifSMS] = useState(true);
   const [notifEmail, setNotifEmail] = useState(true);
   const [notifApp, setNotifApp] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [termsAccepted, setTermsAccepted] = useState(false);
+
+  const [userName, setUserName] = useState(localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!).name : '');
 
   const navigateTo = (path: string) => {
     window.location.href = path;
@@ -380,7 +349,7 @@ type DashboardStats = {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-blue-50 to-background">
-      {/* Header */}
+      {/* Header
       <header className="bg-white/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -397,24 +366,95 @@ type DashboardStats = {
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm"  onClick={logout}>
+            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
           </div>
         </div>
-      </header>
+      </header> */}
+
+      {/* Header */}
+<header className="bg-white/80 backdrop-blur-md border-b border-border sticky top-0 z-50">
+  <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+
+    {/* Logo */}
+    <div className="flex items-center space-x-2">
+      <div className="p-2 bg-primary rounded-lg">
+        <Home className="h-6 w-6 text-primary-foreground" />
+      </div>
+      <h1 className="text-xl md:text-2xl font-bold text-foreground">
+        ServiceFlow
+      </h1>
+    </div>
+
+  
+    <Badge variant="outline" className="text-blue-600 border-blue-200 md:hidden">
+      <User className="h-3 w-3 mr-1" />
+      User Account
+    </Badge>
+    {/* Desktop Menu */}
+    <div className="hidden md:flex items-center space-x-4">
+      <Badge variant="outline" className="text-blue-600 border-blue-200">
+      <User className="h-3 w-3 mr-1" />
+      User Account
+    </Badge>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => (window.location.href = "/")}
+      >
+        Home
+      </Button>
+
+      <Button variant="outline" size="sm" onClick={() => logout()}>
+        <LogOut className="h-4 w-4 mr-2" />
+        Logout
+      </Button>
+    </div>
+
+    {/* Mobile Menu Button */}
+    <button
+      className="md:hidden"
+      onClick={() => setMenuOpen(!menuOpen)}
+    >
+      {menuOpen ? <X /> : <Menu />}
+    </button>
+  </div>
+
+  {/* Mobile Menu */}
+  {menuOpen && (
+    <div className="md:hidden border-t border-border bg-white px-4 pb-4 space-y-3">
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full"
+        onClick={() => (window.location.href = "/")}
+      >
+        Home
+      </Button>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full"
+        onClick={() => logout()}
+      >
+        <LogOut className="h-4 w-4 mr-2" />
+        Logout
+      </Button>
+    </div>
+  )}
+</header>
 
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">
-            Welcome back, {userProfile?.name || 'User'}!
-          </h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back, John!</h1>
           <p className="text-muted-foreground">Manage your bookings and stay on top of every service request</p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full overflow-x-auto grid-cols-5">
             <TabsTrigger value="overview" className="flex items-center">
               <HomeIcon className="h-4 w-4 mr-2" />
               Overview
@@ -436,7 +476,7 @@ type DashboardStats = {
               Profile
             </TabsTrigger>
           </TabsList>
-
+          
             {/* Overview Tab */}
           <TabsContent value="overview">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -1423,17 +1463,9 @@ type DashboardStats = {
                       <div className="p-4 border rounded-lg">
                         <div className="font-medium mb-2">Account Actions</div>
                         <div className="flex flex-wrap gap-2">
-                          {!isEditingProfile ? (
-                            <Button variant="outline" onClick={() => setIsEditingProfile(true)}>
-                              Edit Profile
-                            </Button>
-                          ) : (
-                            <Button variant="outline" onClick={() => { resetProfileForm(); setIsEditingProfile(false); }}>
-                              Cancel Edit
-                            </Button>
-                          )}
-                          <Button variant="outline" onClick={() => setChangePasswordOpen(true)}>Change Password</Button>
-                          <Button variant="outline" onClick={logout}>Logout</Button>
+                          <Button variant="outline">Edit Profile</Button>
+                          <Button variant="outline">Change Password</Button>
+                          <Button variant="outline" onClick={() => { window.location.href = '/'; }}>Logout</Button>
                         </div>
                       </div>
                     </div>

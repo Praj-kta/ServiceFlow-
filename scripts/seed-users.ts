@@ -1,20 +1,23 @@
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
-import { User } from '../server/models/User';
-import dotenv from 'dotenv';
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+import bcrypt from "bcryptjs";
+import { User } from "../server/models/User";
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/serviceflow';
+const MONGODB_URI = process.env.MONGO_URI;
+
+if (!MONGODB_URI) {
+  console.error("❌ MONGO_URI not found");
+  process.exit(1);
+}
 
 const seedUsers = [
   {
-    name: 'John Doe',
-    email: 'user@test.com',
-    password: 'password123',
-    role: 'user',
-    phone: '+91 9876543210',
-    address: '123 Main Street, Mumbai, Maharashtra 400001'
+    name: "John Doe",
+    email: "user@test.com",
+    password: "password123",
+    role: "user"
   },
   {
     name: 'Jane Smith',
@@ -26,7 +29,6 @@ const seedUsers = [
     providerProfile: {
       companyName: 'Elite Home Services',
       category: 'Home Cleaning',
-      categories: ['Home Cleaning'],
       experience: '5 years',
       skills: ['Deep Cleaning', 'Carpet Cleaning', 'Kitchen Cleaning', 'Bathroom Sanitization'],
       rating: 4.8,
@@ -52,7 +54,6 @@ const seedUsers = [
     providerProfile: {
       companyName: 'Quick Fix Plumbing',
       category: 'Plumbing',
-      categories: ['Plumbing'],
       experience: '8 years',
       skills: ['Pipe Repair', 'Leak Detection', 'Bathroom Fitting', 'Water Heater Installation'],
       rating: 4.9,
@@ -70,7 +71,6 @@ const seedUsers = [
     providerProfile: {
       companyName: 'Bright Spark Electrical',
       category: 'Electrical',
-      categories: ['Electrical'],
       experience: '6 years',
       skills: ['Wiring', 'Circuit Repair', 'Lighting Installation', 'Electrical Safety Inspection'],
       rating: 4.7,
@@ -90,25 +90,19 @@ const seedUsers = [
 
 async function seedDatabase() {
   try {
-    console.log('🌱 Starting database seeding...');
-    
-    // Connect to MongoDB
+    console.log("🌱 Starting database seeding...");
+
     await mongoose.connect(MONGODB_URI);
-    console.log('✅ Connected to MongoDB');
 
-    // Clear existing users
+    console.log("✅ MongoDB Connected");
+
     await User.deleteMany({});
-    console.log('🗑️  Cleared existing users');
 
-    // Hash passwords and create users
-    const usersToInsert = await Promise.all(
-      seedUsers.map(async (userData) => {
-        const hashedPassword = await bcrypt.hash(userData.password, 10);
-        return {
-          ...userData,
-          password: hashedPassword
-        };
-      })
+    const users = await Promise.all(
+      seedUsers.map(async (u) => ({
+        ...u,
+        password: await bcrypt.hash(u.password, 10)
+      }))
     );
 
     // Insert users
@@ -124,18 +118,15 @@ async function seedDatabase() {
       console.log(`  Password: ${user.password}`);
       if (user.providerProfile) {
         console.log(`  Company: ${user.providerProfile.companyName}`);
-        const categories = Array.isArray(user.providerProfile.categories)
-          ? user.providerProfile.categories.join(', ')
-          : user.providerProfile.category;
-        console.log(`  Categories: ${categories}`);
+        console.log(`  Category: ${user.providerProfile.category}`);
       }
     });
     console.log('\n═══════════════════════════════════════════════════════');
 
     console.log('\n✅ Database seeding completed successfully!');
     process.exit(0);
-  } catch (error) {
-    console.error('❌ Error seeding database:', error);
+  } catch (err) {
+    console.error("❌ Seeding failed:", err);
     process.exit(1);
   }
 }

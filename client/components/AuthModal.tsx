@@ -23,7 +23,7 @@ export default function AuthModal({ isOpen, onClose, authType }: AuthModalProps)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-[95%] max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-center text-2xl">{title}</DialogTitle>
           <DialogDescription className="text-center">

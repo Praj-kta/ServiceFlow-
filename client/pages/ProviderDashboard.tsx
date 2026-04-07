@@ -37,16 +37,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useEffect } from "react";
-import { requireAuth, requireRole, getUserId ,logout} from "../lib/auth";
+import { requireAuth, requireRole, getUserId } from "../lib/auth";
 import { api } from "@/lib/api";
-
-type ServiceFormState = {
-  name: string;
-  description: string;
-  category: string;
-  price: string;
-  status?: string;
-};
 
 export default function ProviderDashboard() {
   // Authentication check
@@ -377,7 +369,7 @@ const handleWithdraw = () => {
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm" onClick={logout}>
+            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -1105,7 +1097,7 @@ const handleWithdraw = () => {
                     <div className="flex items-center justify-between"><span>Account Security</span><Badge variant="secondary">2FA Enabled</Badge></div>
                     <div className="flex items-center justify-between"><span>Profile Visibility</span><Badge variant="secondary">Public</Badge></div>
                     <div className="flex items-center justify-between"><span>Help & Policies</span><Button size="sm" variant="outline">Contact Admin</Button></div>
-                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={logout}>Sign Out</Button></div>
+                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={() => { window.location.href = '/'; }}>Sign Out</Button></div>
                   </CardContent>
                 </Card>
               </div>
