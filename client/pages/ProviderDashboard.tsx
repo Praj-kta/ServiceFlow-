@@ -33,11 +33,14 @@ import {
   Target,
   Award,
   Bell,
-  Wallet
+  Wallet,
+  Receipt,
+  User,
+  HomeIcon
 } from "lucide-react";
 import { useState } from "react";
 import { useEffect } from "react";
-import { requireAuth, requireRole, getUserId } from "../lib/auth";
+import { requireAuth, requireRole, getUserId, logout } from "../lib/auth";
 import { api } from "@/lib/api";
 
 export default function ProviderDashboard() {
@@ -369,7 +372,7 @@ const handleWithdraw = () => {
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
+            <Button variant="outline" size="sm" onClick={() => { logout(); }}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -407,28 +410,28 @@ const handleWithdraw = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="overview" className="flex items-center">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="jobs" className="flex items-center">
-              <Briefcase className="h-4 w-4 mr-2" />
-              Jobs
-            </TabsTrigger>
-            <TabsTrigger value="services" className="flex items-center">
-              <Settings className="h-4 w-4 mr-2" />
-              My Services
-            </TabsTrigger>
-            <TabsTrigger value="earnings" className="flex items-center">
-              <DollarSign className="h-4 w-4 mr-2" />
-              Earnings
-            </TabsTrigger>
-            <TabsTrigger value="profile" className="flex items-center">
-              <Users className="h-4 w-4 mr-2" />
-              Profile
-            </TabsTrigger>
-          </TabsList>
+         <TabsList className="grid w-full grid-cols-5 gap-1">
+  <TabsTrigger value="overview" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <HomeIcon className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Overview</span>
+  </TabsTrigger>
+  <TabsTrigger value="services" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <Settings className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Services</span>
+  </TabsTrigger>
+  <TabsTrigger value="bookings" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <Calendar className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Bookings</span>
+  </TabsTrigger>
+  <TabsTrigger value="payments" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <Receipt className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Payments</span>
+  </TabsTrigger>
+  <TabsTrigger value="profile" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <User className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Profile</span>
+  </TabsTrigger>
+</TabsList>
 
           {/* Overview Tab */}
           <TabsContent value="overview">
@@ -1097,7 +1100,7 @@ const handleWithdraw = () => {
                     <div className="flex items-center justify-between"><span>Account Security</span><Badge variant="secondary">2FA Enabled</Badge></div>
                     <div className="flex items-center justify-between"><span>Profile Visibility</span><Badge variant="secondary">Public</Badge></div>
                     <div className="flex items-center justify-between"><span>Help & Policies</span><Button size="sm" variant="outline">Contact Admin</Button></div>
-                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={() => { window.location.href = '/'; }}>Sign Out</Button></div>
+                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={() => { logout(); }}>Sign Out</Button></div>
                   </CardContent>
                 </Card>
               </div>
