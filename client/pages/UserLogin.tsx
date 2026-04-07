@@ -1,104 +1,180 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  ArrowLeft, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  User, 
+import {
+  ArrowLeft,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  User,
   Home,
   Phone,
   MapPin,
-  CheckCircle
+  CheckCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { loginSchema, registerSchema } from "@/lib/validation/authValidation";
 
 export default function UserLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    phone: '',
-    address: ''
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    phone: "",
+    address: "",
+    isAcceptedTerms: false,
   });
-  const [error, setError] = useState('');
+  const [validationError, setValidationError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setError('');
+  const handleInputChange = (field: string, value: string | boolean) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setValidationError("");
   };
+
+  // const
+  // handleSubmit = async (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setValidationError('');
+
+  //   // Validate required fields
+  //   if (!formData.email || !formData.email.trim()) {
+  //     setValidationError('Email is required');
+  //     return;
+  //   }
+
+  //   if (!formData.password || !formData.password.trim()) {
+  //     setValidationError('Password is required');
+  //     return;
+  //   }
+
+  //   // Email format validation
+  //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  //   if (!emailRegex.test(formData.email)) {
+  //     setValidationError('Please enter a valid email address');
+  //     return;
+  //   }
+
+  //   // Password length validation
+  //   if (formData.password.length < 6) {
+  //     setValidationError('Password must be at least 6 characters');
+  //     return;
+  //   }
+
+  //   // Additional validation for sign up
+  //   if (isSignUp) {
+  //     if (!formData.name || !formData.name.trim()) {
+  //       setValidationError('Name is required');
+  //       return;
+  //     }
+  //   }
+
+  //   setLoading(true);
+
+  //   try {
+  //     if (isSignUp) {
+  //       // Registration
+  //       const res = await api.post('/auth/register', {
+  //         ...formData,
+  //         role: 'user'
+  //       });
+  //       console.log("Registration response:", res);
+  //       localStorage.setItem('authToken', res.token);
+  //       localStorage.setItem('userId', res.user.id);
+  //       localStorage.setItem('userRole', res.user.role);
+  //       window.location.href = '/user-dashboard';
+  //     } else {
+  //       // Login
+  //       const res = await api.post('/auth/login', {
+  //         email: formData.email,
+  //         password: formData.password
+  //       });
+  //       console.log("Login response:", res);
+  //       localStorage.setItem('authToken', res.token);
+  //       localStorage.setItem('userId', res.user.id);
+  //       localStorage.setItem('userRole', res.user.role);
+  //       localStorage.setItem('user', JSON.stringify(res.user));
+  //       window.location.href = '/user-dashboard';
+  //     }
+  //   } catch (err: any) {
+  //     setValidationError(err.message || 'Authentication failed. Please try again.');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    
-    // Validate required fields
-    if (!formData.email || !formData.email.trim()) {
-      setError('Email is required');
+    setValidationError("");
+
+    const schema = isSignUp ? registerSchema : loginSchema;
+
+    // validate correct fields
+    const dataToValidate = isSignUp
+      ? formData
+      : {
+          email: formData.email,
+          password: formData.password,
+        };
+
+    const { error } = schema.validate(dataToValidate, {
+      abortEarly: true,
+    });
+
+    if (error) {
+      setValidationError(error.details[0].message);
       return;
     }
-    
-    if (!formData.password || !formData.password.trim()) {
-      setError('Password is required');
-      return;
-    }
-    
-    // Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-    
-    // Password length validation
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-    
-    // Additional validation for sign up
-    if (isSignUp) {
-      if (!formData.name || !formData.name.trim()) {
-        setError('Name is required');
-        return;
-      }
-    }
-    
+
     setLoading(true);
 
     try {
       if (isSignUp) {
-        // Registration
-        const res = await api.post('/auth/register', {
-          ...formData,
-          role: 'user'
+
+        const { confirmPassword, isAcceptedTerms, ...payload } = formData;
+
+        const res = await api.post("/auth/register", {
+          ...payload,
+          role: "user",
         });
-        localStorage.setItem('authToken', res.token);
-        localStorage.setItem('userId', res.user.id);
-        localStorage.setItem('userRole', res.user.role);
-        window.location.href = '/user-dashboard';
+
+        localStorage.setItem("authToken", res.token);
+        localStorage.setItem("userId", res.user.id);
+        localStorage.setItem("userRole", res.user.role);
+        localStorage.setItem("user", JSON.stringify(res.user));
+
+        window.location.href = "/user-dashboard";
+
       } else {
-        // Login
-        const res = await api.post('/auth/login', {
+
+        const res = await api.post("/auth/login", {
           email: formData.email,
-          password: formData.password
+          password: formData.password,
         });
-        console.log("Login response:", res);
-        localStorage.setItem('authToken', res.token);
-        localStorage.setItem('userId', res.user.id);
-        localStorage.setItem('userRole', res.user.role);
-        window.location.href = '/user-dashboard';
+
+        localStorage.setItem("authToken", res.token);
+        localStorage.setItem("userId", res.user.id);
+        localStorage.setItem("userRole", res.user.role);
+        localStorage.setItem("user", JSON.stringify(res.user));
+
+        window.location.href = "/user-dashboard";
       }
+
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please try again.');
+      setValidationError(err.message || "Authentication failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -132,148 +208,170 @@ export default function UserLogin() {
               <User className="h-8 w-8 text-blue-600" />
             </div>
             <h2 className="text-2xl font-bold text-foreground mb-2">
-              {isSignUp ? 'Create User Account' : 'Welcome Back, User'}
+              {isSignUp ? "Create User Account" : "Welcome Back, User"}
             </h2>
             <p className="text-muted-foreground">
-              {isSignUp ? 'Start booking services for your home' : 'Sign in to access your dashboard'}
+              {isSignUp
+                ? "Start booking services for your home"
+                : "Sign in to access your dashboard"}
             </p>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>{isSignUp ? 'Sign Up' : 'Sign In'}</CardTitle>
+              <CardTitle>{isSignUp ? "Sign Up" : "Sign In"}</CardTitle>
               <CardDescription>
-                {isSignUp ? 'Create your account to get started' : 'Enter your credentials to access your account'}
+                {isSignUp
+                  ? "Create your account to get started"
+                  : "Enter your credentials to access your account"}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {error && (
+              {validationError && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                  {error}
+                  {validationError}
                 </div>
               )}
               <form onSubmit={handleSubmit} className="space-y-4">
-              {isSignUp && (
+                {isSignUp && (
+                  <div>
+                    <Label htmlFor="name">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="name"
+                        type="text"
+                        placeholder="Enter your full name"
+                        className="pl-10"
+                        value={formData.name}
+                        onChange={(e) =>
+                          handleInputChange("name", e.target.value)
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
-                  <Label htmlFor="name">Full Name</Label>
+                  <Label htmlFor="email">Email</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      id="name"
-                      type="text"
-                      placeholder="Enter your full name"
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="Enter your email"
                       className="pl-10"
-                      value={formData.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
+                      value={formData.email}
+                      onChange={(e) =>
+                        handleInputChange("email", e.target.value)
+                      }
                       required
                     />
                   </div>
                 </div>
-              )}
 
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email"
-                    className="pl-10"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange('email', e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              {isSignUp && (
-                <div>
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      id="phone"
-                      type="tel"
-                      placeholder="+91 9876543210"
-                      className="pl-10"
-                      value={formData.phone}
-                      onChange={(e) => handleInputChange('phone', e.target.value)}
-                    />
+                {isSignUp && (
+                  <div>
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="phone"
+                        type="tel"
+                        placeholder="+91 9876543210"
+                        className="pl-10"
+                        value={formData.phone}
+                        onChange={(e) =>
+                          handleInputChange("phone", e.target.value)
+                        }
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {isSignUp && (
-                <div>
-                  <Label htmlFor="address">Address</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      id="address"
-                      type="text"
-                      placeholder="Enter your address"
-                      className="pl-10"
-                      value={formData.address}
-                      onChange={(e) => handleInputChange('address', e.target.value)}
-                    />
+                {isSignUp && (
+                  <div>
+                    <Label htmlFor="address">Address</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="address"
+                        type="text"
+                        placeholder="Enter your address"
+                        className="pl-10"
+                        value={formData.address}
+                        onChange={(e) =>
+                          handleInputChange("address", e.target.value)
+                        }
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <div>
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    className="pl-10 pr-10"
-                    value={formData.password}
-                    onChange={(e) => handleInputChange('password', e.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {isSignUp && (
                 <div>
-                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Label htmlFor="password">Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      id="confirmPassword"
-                      type="password"
-                      placeholder="Confirm your password"
-                      className="pl-10"
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      className="pl-10 pr-10"
+                      value={formData.password}
+                      onChange={(e) =>
+                        handleInputChange("password", e.target.value)
+                      }
+                      required
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
                   </div>
                 </div>
-              )}
 
-              <div className="flex items-center space-x-2">
-                <Checkbox id="remember" />
-                <Label htmlFor="remember" className="text-sm">
-                  {isSignUp ? 'I agree to the Terms & Conditions' : 'Remember me'}
-                </Label>
-              </div>
+                {isSignUp && (
+                  <div>
+                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="confirmPassword"
+                        type="password"
+                        placeholder="Confirm your password"
+                        className="pl-10"
+                        value={formData.confirmPassword}
+                        onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
 
-              <Button type="submit" className="w-full" disabled={loading}>
-                <CheckCircle className="h-4 w-4 mr-2" />
-                {loading ? 'Please wait...' : (isSignUp ? 'Create Account' : 'Sign In')}
-              </Button>
+                <div className="flex items-center space-x-2">
+                  <Checkbox id="remember" checked={formData.isAcceptedTerms} onCheckedChange={() => handleInputChange("isAcceptedTerms", !formData.isAcceptedTerms)} />
+                  <Label htmlFor="remember" className="text-sm">
+                    {isSignUp
+                      ? "I agree to the Terms & Conditions"
+                      : "Remember me"}
+                  </Label>
+                </div>
+
+                <Button type="submit" className="w-full" disabled={loading || ( !formData.isAcceptedTerms && isSignUp)}>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  {loading
+                    ? "Please wait..."
+                    : isSignUp
+                      ? "Create Account"
+                      : "Sign In"}
+                </Button>
               </form>
 
               {!isSignUp && (
@@ -286,12 +384,14 @@ export default function UserLogin() {
 
               <div className="text-center">
                 <p className="text-sm text-muted-foreground">
-                  {isSignUp ? 'Already have an account?' : "Don't have an account?"}
+                  {isSignUp
+                    ? "Already have an account?"
+                    : "Don't have an account?"}
                   <button
                     onClick={() => setIsSignUp(!isSignUp)}
                     className="text-primary hover:underline ml-1"
                   >
-                    {isSignUp ? 'Sign In' : 'Sign Up'}
+                    {isSignUp ? "Sign In" : "Sign Up"}
                   </button>
                 </p>
               </div>
@@ -300,7 +400,9 @@ export default function UserLogin() {
 
           {/* Features for Users */}
           <div className="mt-8 text-center">
-            <h3 className="font-semibold text-foreground mb-4">What you can do as a User:</h3>
+            <h3 className="font-semibold text-foreground mb-4">
+              What you can do as a User:
+            </h3>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="flex items-center">
                 <CheckCircle className="h-4 w-4 text-green-600 mr-2" />

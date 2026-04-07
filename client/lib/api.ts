@@ -1,7 +1,4 @@
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL;// Change port if your backend runs on different port
-console.log("API Base URL:", BASE_URL);
-console.log("ENV:", import.meta.env);
-console.log("API:", import.meta.env.VITE_API_BASE_URL);
 
 type RequestMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -19,8 +16,6 @@ async function request<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-
-  console.log(`Making ${method} request to ${BASE_URL}${endpoint}`);
   
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     method,
