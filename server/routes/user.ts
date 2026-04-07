@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { Booking } from '../models/Booking';
 import { requireAuth, requireSelfOrAdmin } from '../middleware/auth';
+import { User } from '../models/User';
 
 const router = Router();
 
@@ -39,13 +41,89 @@ router.get('/dashboard/:userId', requireAuth, requireSelfOrAdmin, async (req: Re
 
 // Get user profile
 router.get('/profile/:id', requireAuth, requireSelfOrAdmin, async (req: Request, res: Response) => {
-  // In real app, fetch from User model
-  res.json({ id: req.params.id, name: 'John Doe', email: 'john@example.com', phone: '+91 9876543210' });
+  try {
+    const user = await User.findById(req.params.id).select('name email phone address createdAt');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      id: String(user._id),
+      name: user.name,
+      email: user.email,
+      phone: user.phone || '',
+      address: user.address || '',
+      createdAt: user.createdAt
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching profile', error });
+  }
 });
 
 // Update user profile
 router.put('/profile/:id', requireAuth, requireSelfOrAdmin, async (req: Request, res: Response) => {
-  res.json({ message: 'Profile updated', ...req.body });
+  try {
+    const { name, email, phone, address } = req.body;
+
+    const updates: Record<string, string> = {};
+    if (typeof name === 'string') updates.name = name.trim();
+    if (typeof email === 'string') updates.email = email.trim().toLowerCase();
+    if (typeof phone === 'string') updates.phone = phone.trim();
+    if (typeof address === 'string') updates.address = address.trim();
+
+    if (updates.email) {
+      const existing = await User.findOne({
+        email: updates.email,
+        _id: { $ne: req.params.id }
+      });
+      if (existing) {
+        return res.status(400).json({ message: 'Email already in use' });
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    ).select('name email phone address createdAt');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      id: String(user._id),
+      name: user.name,
+      email: user.email,
+      phone: user.phone || '',
+      address: user.address || '',
+      createdAt: user.createdAt
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating profile', error });
+  }
+});
+
+// Change password
+router.post('/change-password/:id', requireAuth, requireSelfOrAdmin, async (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password incorrect' });
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    user.password = hashed;
+    await user.save();
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error changing password', error });
+  }
 });
 
 // Get favorites

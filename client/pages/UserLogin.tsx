@@ -9,13 +9,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  ArrowLeft,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  User,
+import { 
+  ArrowLeft, 
+  Mail, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  User, 
   Home,
   Phone,
   MapPin,
@@ -29,16 +29,18 @@ export default function UserLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    phone: "",
-    address: "",
-    isAcceptedTerms: false,
+    name: '',
+    email: '',
+    password: '',
+    phone: '',
+    address: ''
   });
   const [validationError, setValidationError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotError, setForgotError] = useState('');
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -138,17 +140,25 @@ export default function UserLogin() {
       setValidationError(error.details[0].message);
       return;
     }
-
+    
+    // Additional validation for sign up
+    if (isSignUp) {
+      if (!formData.name || !formData.name.trim()) {
+        setError('Name is required');
+        return;
+      }
+    }
+    
     setLoading(true);
 
     try {
+      const normalizedEmail = formData.email.trim().toLowerCase();
+
       if (isSignUp) {
-
-        const { confirmPassword, isAcceptedTerms, ...payload } = formData;
-
-        const res = await api.post("/auth/register", {
-          ...payload,
-          role: "user",
+        // Registration
+        const res = await api.post('/auth/register', {
+          ...formData,
+          role: 'user'
         });
 
         localStorage.setItem("authToken", res.token);
@@ -159,10 +169,10 @@ export default function UserLogin() {
         window.location.href = "/user-dashboard";
 
       } else {
-
-        const res = await api.post("/auth/login", {
+        // Login
+        const res = await api.post('/auth/login', {
           email: formData.email,
-          password: formData.password,
+          password: formData.password
         });
 
         localStorage.setItem("authToken", res.token);
@@ -191,7 +201,7 @@ export default function UserLogin() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">ServiceFlow</h1>
           </div>
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild >
             <a href="/user-dashboard?tab=services">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to All Services
@@ -233,25 +243,23 @@ export default function UserLogin() {
                 </div>
               )}
               <form onSubmit={handleSubmit} className="space-y-4">
-                {isSignUp && (
-                  <div>
-                    <Label htmlFor="name">Full Name</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="name"
-                        type="text"
-                        placeholder="Enter your full name"
-                        className="pl-10"
-                        value={formData.name}
-                        onChange={(e) =>
-                          handleInputChange("name", e.target.value)
-                        }
-                        required
-                      />
-                    </div>
+              {isSignUp && (
+                <div>
+                  <Label htmlFor="name">Full Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      id="name"
+                      type="text"
+                      placeholder="Enter your full name"
+                      className="pl-10"
+                      value={formData.name}
+                      onChange={(e) => handleInputChange('name', e.target.value)}
+                      required
+                    />
                   </div>
-                )}
+                </div>
+              )}
 
                 <div>
                   <Label htmlFor="email">Email</Label>
@@ -338,22 +346,20 @@ export default function UserLogin() {
                   </div>
                 </div>
 
-                {isSignUp && (
-                  <div>
-                    <Label htmlFor="confirmPassword">Confirm Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        placeholder="Confirm your password"
-                        className="pl-10"
-                        value={formData.confirmPassword}
-                        onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                      />
-                    </div>
+              {isSignUp && (
+                <div>
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      id="confirmPassword"
+                      type="password"
+                      placeholder="Confirm your password"
+                      className="pl-10"
+                    />
                   </div>
-                )}
+                </div>
+              )}
 
                 <div className="flex items-center space-x-2">
                   <Checkbox id="remember" checked={formData.isAcceptedTerms} onCheckedChange={() => handleInputChange("isAcceptedTerms", !formData.isAcceptedTerms)} />
@@ -374,14 +380,23 @@ export default function UserLogin() {
                 </Button>
               </form>
 
+              {/* forgot password link */}
               {!isSignUp && (
                 <div className="text-center">
-                  <a href="#" className="text-sm text-primary hover:underline">
-                    Forgot your password?
-                  </a>
+                  <button
+                    type="button"
+                    className="text-sm text-primary underline"
+                    onClick={() => {
+                      setShowForgot(true);
+                      setForgotEmail(formData.email || '');
+                      setForgotError('');
+                      setForgotMessage('');
+                    }}
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
               )}
-
               <div className="text-center">
                 <p className="text-sm text-muted-foreground">
                   {isSignUp
@@ -398,7 +413,57 @@ export default function UserLogin() {
             </CardContent>
           </Card>
 
-          {/* Features for Users */}
+          {/* forgot password dialog */}
+          <AlertDialog open={showForgot} onOpenChange={setShowForgot}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Enter your registered email to receive a password reset link.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="space-y-4">
+                {forgotError && <p className="text-sm text-red-600">{forgotError}</p>}
+                {forgotMessage && <p className="text-sm text-green-600">{forgotMessage}</p>}
+                <div>
+                  <Label htmlFor="forgot-email">Email</Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 mt-6">
+                <AlertDialogCancel onClick={() => setShowForgot(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    setForgotError('');
+                    setForgotMessage('');
+                    if (!forgotEmail.trim()) {
+                      setForgotError('Email is required');
+                      return;
+                    }
+                    try {
+                      await api.post('/auth/forgot-password', { email: forgotEmail });
+                      setForgotMessage('If the email exists, a reset link has been sent');
+                    } catch (err: any) {
+                      setForgotError(err.message || 'Error sending reset link');
+                    }
+                  }}
+                  className="bg-primary text-white"
+                >
+                  Send Link
+                </AlertDialogAction>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
           <div className="mt-8 text-center">
             <h3 className="font-semibold text-foreground mb-4">
               What you can do as a User:

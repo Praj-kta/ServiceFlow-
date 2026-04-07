@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Service } from '../models/Service';
 import { Booking } from '../models/Booking';
 import { Payment } from '../models/Payment';
+import { Review } from '../models/Review';
 
 const router = Router();
 
@@ -25,9 +26,13 @@ router.get('/dashboard/:providerId', async (req: Request, res: Response) => {
       serviceId: { $in: serviceIds }
     });
 
-    // Total Earnings (only completed payments)
+    // Earnings for this month (completed payments tied to this provider)
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
     const earningsResult = await Payment.aggregate([
-      { $match: { status: 'completed' } },
+      { $match: { status: 'completed', createdAt: { $gte: monthStart, $lt: nextMonthStart } } },
       {
         $lookup: {
           from: 'bookings',
@@ -48,12 +53,26 @@ router.get('/dashboard/:providerId', async (req: Request, res: Response) => {
 
     const earnings = earningsResult[0]?.totalEarnings || 0;
 
+    // Average rating (from reviews for this provider)
+    const ratingResult = await Review.aggregate([
+      { $match: { providerId: new mongoose.Types.ObjectId(providerId) } },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rating' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const rating = ratingResult[0]?.averageRating || 0;
+
     const activeServices = await Service.countDocuments({ providerId });
 
     res.json({
       totalJobs,
       earnings,
-      rating: 0, // Add rating field in Booking schema if needed
+      rating,
       activeServices
     });
 
@@ -79,12 +98,20 @@ router.get('/jobs/:providerId', async (req: Request, res: Response) => {
 
     const serviceIds = await Service.find({ providerId }).distinct('_id');
 
-    const jobs = await Booking.find({
+    let jobs = await Booking.find({
       serviceId: { $in: serviceIds }
     })
       .populate('userId', 'name')
-      .populate('serviceId', 'title price')
+      .populate('serviceId', 'title price providerId')
       .sort({ createdAt: -1 });
+
+    // Only show recently cancelled jobs (last 24 hours)
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    jobs = jobs.filter((job: any) => {
+      if (job.status !== 'cancelled') return true;
+      const cancelledAt = job.cancelledAt ? new Date(job.cancelledAt) : job.updatedAt ? new Date(job.updatedAt) : job.createdAt;
+      return cancelledAt >= cutoff;
+    });
 
     res.json(jobs);
 

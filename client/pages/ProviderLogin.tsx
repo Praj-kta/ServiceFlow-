@@ -3,7 +3,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   ArrowLeft, 
   Mail, 
@@ -20,7 +30,7 @@ import {
   FileText
 } from "lucide-react";
 import { useState } from "react";
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 
 export default function ProviderLogin() {
   const [showPassword, setShowPassword] = useState(false);
@@ -32,13 +42,17 @@ export default function ProviderLogin() {
     phone: '',
     address: '',
     companyName: '',
-    category: '',
+    categories: [] as string[],
     experience: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotError, setForgotError] = useState('');
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | string[]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setError('');
   };
@@ -81,8 +95,8 @@ export default function ProviderLogin() {
         setError('Business name is required');
         return;
       }
-      if (!formData.category) {
-        setError('Please select a service category');
+      if (!formData.categories?.length) {
+        setError('Please select at least one service category');
         return;
       }
     }
@@ -90,18 +104,20 @@ export default function ProviderLogin() {
     setLoading(true);
 
     try {
+      const normalizedEmail = formData.email.trim().toLowerCase();
+
       if (isSignUp) {
         // Provider Registration
-        const res = await api.post('/auth/register', {
+        const res: any = await api.post('/auth/register', {
           name: formData.name,
-          email: formData.email,
+          email: normalizedEmail,
           password: formData.password,
           phone: formData.phone,
           address: formData.address,
           role: 'provider',
           providerProfile: {
             companyName: formData.companyName,
-            category: formData.category,
+            categories: formData.categories,
             experience: formData.experience
           }
         });
@@ -111,8 +127,8 @@ export default function ProviderLogin() {
         window.location.href = '/provider-dashboard';
       } else {
         // Provider Login
-        const res = await api.post('/auth/login', {
-          email: formData.email,
+        const res: any = await api.post('/auth/login', {
+          email: normalizedEmail,
           password: formData.password
         });
         console.log(res)
@@ -212,19 +228,43 @@ export default function ProviderLogin() {
                   </div>
 
                   <div>
-                    <Label htmlFor="serviceCategory">Service Category</Label>
-                    <Select value={formData.category} onValueChange={(value) => handleInputChange('category', value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your primary service" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="home-services">Home Services</SelectItem>
-                        <SelectItem value="appliances">Appliance Repair</SelectItem>
-                        <SelectItem value="vehicle">Vehicle Services</SelectItem>
-                        <SelectItem value="design">Design & Renovation</SelectItem>
-                        <SelectItem value="multiple">Multiple Services</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>Service Categories</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-between text-left"
+                        >
+                          {formData.categories.length
+                            ? formData.categories.join(', ')
+                            : 'Select service categories'}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {[
+                          { value: 'home-services', label: 'Home Services' },
+                          { value: 'appliances', label: 'Appliance Repair' },
+                          { value: 'vehicle', label: 'Vehicle Services' },
+                          { value: 'design', label: 'Design & Renovation' },
+                          { value: 'contract', label: 'Contract-Based' },
+                          { value: 'ai', label: 'AI Features' },
+                        ].map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={formData.categories.includes(option.value)}
+                            onCheckedChange={(checked) => {
+                              const nextCategories = checked
+                                ? [...formData.categories, option.value]
+                                : formData.categories.filter((c) => c !== option.value);
+                              handleInputChange('categories', nextCategories);
+                            }}
+                          >
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </>
               )}
@@ -282,7 +322,7 @@ export default function ProviderLogin() {
               {isSignUp && (
                 <div>
                   <Label htmlFor="experience">Years of Experience</Label>
-                  <Select>
+                  <Select value={formData.experience} onValueChange={(value) => handleInputChange('experience', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select experience level" />
                     </SelectTrigger>
@@ -388,6 +428,58 @@ export default function ProviderLogin() {
               </div>
             </CardContent>
           </Card>
+
+          {/* forgot password dialog */}
+          <AlertDialog open={showForgot} onOpenChange={setShowForgot}>
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Enter your registered email to receive a password reset link.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <div className="space-y-4">
+                {forgotError && <p className="text-sm text-red-600">{forgotError}</p>}
+                {forgotMessage && <p className="text-sm text-green-600">{forgotMessage}</p>}
+                <div>
+                  <Label htmlFor="forgot-email">Email</Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 mt-6">
+                <AlertDialogCancel onClick={() => setShowForgot(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    setForgotError('');
+                    setForgotMessage('');
+                    if (!forgotEmail.trim()) {
+                      setForgotError('Email is required');
+                      return;
+                    }
+                    try {
+                      await api.post('/auth/forgot-password', { email: forgotEmail });
+                      setForgotMessage('If the email exists, a reset link has been sent');
+                    } catch (err: any) {
+                      setForgotError(err.message || 'Error sending reset link');
+                    }
+                  }}
+                  className="bg-primary text-white"
+                >
+                  Send Link
+                </AlertDialogAction>
+              </div>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Provider Benefits */}
           <div className="mt-8 text-center">

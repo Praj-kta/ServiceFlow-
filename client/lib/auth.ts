@@ -26,7 +26,7 @@ export const requireAuth = (redirectUrl: string = "/login-user"): void => {
   if (!token) {
     localStorage.clear();
     window.location.replace(redirectUrl);
-    throw new Error("Authentication required");
+    // Do not throw; redirect and stop further execution
   }
 };
 

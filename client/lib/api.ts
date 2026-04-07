@@ -1,4 +1,5 @@
-export const BASE_URL = import.meta.env.VITE_API_BASE_URL;// Change port if your backend runs on different port
+export const BASE_URL = `http://localhost:8080/api`;
+// Change port if your backend runs on different port
 
 type RequestMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -34,7 +35,16 @@ async function request<T>(
     const errorData = await response.json().catch(() => ({
       message: "Something went wrong",
     }));
-    throw new Error(errorData.message);
+
+    // Surface the full URL + status to help diagnose 404/500 issues
+    const errorMessage =
+      typeof errorData === "object" && errorData !== null
+        ? (errorData.message || errorData.error || JSON.stringify(errorData))
+        : String(errorData);
+
+    throw new Error(
+      `${response.status} ${response.statusText}: ${errorMessage} (url=${BASE_URL}${endpoint})`
+    );
   }
 
   return response.json();

@@ -29,115 +29,191 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useEffect } from "react";
-import { requireAuth, getUserId, logout } from "../lib/auth";
+import { requireAuth, getUserId } from "../lib/auth";
 
   export default function UserDashboard() {
   // Authentication check
   useEffect(() => {
-    requireAuth('/user-login');
+    requireAuth('/login-user');
   }, []);
 
-  const currentUserId = getUserId() || 'test-user-1';
-  function ContractServicesGrid() {
-    const [selected, setSelected] = useState<string | null>(null);
-    const items = [
-      { key: 'new-home-construction', name: 'New Home Construction', price: 'Base from ₹1,800/sq.ft' },
-      { key: 'apartment-project', name: 'Apartment Project', price: 'Base from ₹1,200/sq.ft' },
-      { key: 'cafe-interior', name: 'Café Interior Design', price: 'Base from ₹1,200/sq.ft' },
-      { key: 'hotel-bar-resort', name: 'Hotel / Bar / Resort Fitout or Construction', price: 'Base from ₹2,000/sq.ft' },
-      { key: 'office-interior', name: 'Office Interior Design', price: 'Base from ₹1,200/sq.ft' },
-      { key: 'civil-structural', name: 'Civil & Structural Work', price: 'Base from ₹1,500/sq.ft' },
-      { key: 'tiles-flooring', name: 'Tiles & Flooring', price: 'Base from ₹70/sq.ft' },
-    ];
+  const [userId, setUserId] = useState('');
+  // service state that will be populated from backend
+  const [services, setServices] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
 
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((s) => (
-            <Card key={s.key} className={`hover:shadow-lg transition-shadow cursor-pointer ${selected===s.key?'ring-2 ring-primary':''}`} onClick={() => setSelected(s.key)}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold text-sm">{s.name}</div>
-                    <div className="text-xs text-muted-foreground">{s.price}</div>
-                  </div>
-                  <Badge variant="outline">Select</Badge>
-                </div>
-                <div className="mt-3">
-                  <Button size="sm" className="w-full" onClick={(e)=>{e.stopPropagation(); window.location.href=`/contract-booking?service=${encodeURIComponent(s.key)}&bhk=${encodeURIComponent('2 BHK')}&floors=1&area=1000`}}>Book Now</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        {selected && (
-          <div className="p-4 rounded-lg border bg-muted/50">
-            <div className="font-medium mb-2">Active Selected Service Details</div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-              <div><span className="text-muted-foreground">Service Name:</span> <span className="font-medium">{items.find(i=>i.key===selected)?.name}</span></div>
-              <div><span className="text-muted-foreground">Sample Provider:</span> <span className="font-medium">Elite Build Co.</span></div>
-              <div><span className="text-muted-foreground">Estimated Price:</span> <span className="font-medium">{items.find(i=>i.key===selected)?.price}</span></div>
-              <div>
-                <Button size="sm" onClick={()=>window.location.href=`/contract-booking?service=${encodeURIComponent(selected)}&bhk=${encodeURIComponent('2 BHK')}&floors=1&area=1000`}>Book Now</Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') ?? 'overview');
-  const userId = currentUserId; // Hardcoded for demo
+
+  // keep activeTab in sync when query string changes (e.g. links back to dashboard)
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && tab !== activeTab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  // helper to load service list from backend
+  const fetchServices = () => {
+    api.get<any[]>('/services')
+      .then(data => {
+        setServices(data);
+      })
+      .catch(err => console.error("Failed to fetch services", err));
+  };
+
+  // fetch bookings for current user
+  const fetchBookings = () => {
+    if (!userId) return;
+    api.get<any[]>(`/bookings/user/${userId}`).then(data => {
+      const mapped = data.map((b: any) => ({
+        id: b._id,
+        service: b.serviceId?.title || b.serviceType || 'Service',
+        provider: b.serviceId?.providerName || 'Provider Name',
+        date: new Date(b.date).toLocaleString(),
+        status: b.status,
+        price: b.serviceId?.price ? `₹${b.serviceId.price}` : '₹0',
+        declineNote: b.declineNote || '',
+        raw: b
+      }));
+      setRecentBookings(mapped);
+    }).catch(err => console.error("Failed to fetch bookings", err));
+  };
 
   // State for API data
-  const [dashboardStats, setDashboardStats] = useState({
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     totalBookings: 0,
     amountSpent: 0,
     completedServices: 0,
     favorites: 0
   });
 
+  // user profile information
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [originalProfile, setOriginalProfile] = useState<UserProfile | null>(null);
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: ''
+  });
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   const [recentBookings, setRecentBookings] = useState<any[]>([]);
   const [userTransactions, setUserTransactions] = useState<any[]>([]);
   const [favoriteServices, setFavoriteServices] = useState<any[]>([]);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+  // compute category lists based on data returned from API
+  const uniqueCategories = Array.from(new Set(services.map((s) => s.category))).filter(Boolean);
+  const displayedCategories = uniqueCategories.filter(
+    (c) => filterCategory === 'all' || c === filterCategory
+  );
 
   useEffect(() => {
+    const storedUserId = getUserId();
+    if (storedUserId) {
+      setUserId(storedUserId);
+    }
+
+    api.get<MeResponse>('/auth/me')
+      .then((data) => {
+        const resolvedUserId = data.user?.id || data.user?._id || storedUserId || '';
+        if (!resolvedUserId) return;
+        setUserId(resolvedUserId);
+        localStorage.setItem('userId', resolvedUserId);
+      })
+      .catch(err => console.error("Failed to resolve authenticated user", err));
+  }, []);
+
+
+  useEffect(() => {
+    if (!userId) return;
+
     // Fetch Dashboard Stats
-    api.get(`/user/dashboard/${userId}`).then(data => {
+    api.get<DashboardStats>(`/user/dashboard/${userId}`).then(data => {
       setDashboardStats(data);
     }).catch(err => console.error("Failed to fetch stats", err));
 
     // Fetch Bookings
-    api.get(`/bookings/user/${userId}`).then(data => {
-      // Map backend booking to frontend format
-      const mapped = data.map((b: any) => ({
-        id: b._id,
-        service: b.serviceId?.title || b.serviceType || 'Service',
-        provider: 'Provider Name', // Populate if available or mock
-        date: new Date(b.date).toLocaleString(),
-        status: b.status,
-        price: '₹' + (b.estimatedCost || '0')
-      }));
-      setRecentBookings(mapped);
-    }).catch(err => console.error("Failed to fetch bookings", err));
+    fetchBookings();
+
 
     // Fetch Transactions
-    api.get(`/user/transactions/${userId}`).then(data => {
+    api.get<any[]>(`/user/transactions/${userId}`).then(data => {
       setUserTransactions(data);
     }).catch(err => console.error("Failed to fetch transactions", err));
 
     // Fetch Favorites
-    api.get(`/user/favorites/${userId}`).then(data => {
+    api.get<any[]>(`/user/favorites/${userId}`).then(data => {
       setFavoriteServices(data);
     }).catch(err => console.error("Failed to fetch favorites", err));
+
+    // Fetch Services
+    fetchServices();
+
+    // Fetch profile info
+    api.get<UserProfile>(`/user/profile/${userId}`).then(data => {
+      setUserProfile(data);
+      setOriginalProfile(data);
+      setProfileForm({
+        name: data.name || '',
+        email: data.email || '',
+        phone: data.phone || '',
+        address: data.address || ''
+      });
+    }).catch(err => console.error('Failed to fetch profile', err));
   }, [userId]);
+
+  // update or cancel handlers
+  const handleEditBooking = (booking: any) => {
+    // open dialog with editable fields extracted from raw booking
+    setSelectedBooking(booking);
+    setEditForm({
+      date: booking.raw?.date ? new Date(booking.raw.date).toISOString().slice(0,10) : '',
+      notes: booking.raw?.notes || '',
+      fullAddress: booking.raw?.fullAddress || '',
+      timeSlot: booking.raw?.timeSlot || '',
+      isUrgent: booking.raw?.isUrgent || false
+    });
+    setIsEditingBooking(true);
+    setBookingDialogOpen(true);
+  };
+
+  const handleDeleteBooking = async (booking: any) => {
+    if (!window.confirm('Are you sure you want to cancel this booking?')) return;
+    try {
+      await api.delete(`/bookings/${booking.id}`);
+      alert('Booking cancelled');
+      fetchBookings();
+    } catch (err) {
+      console.error('Failed to delete booking', err);
+      alert('Cancellation failed');
+    }
+  };
+
+
+  // when user switches to the services tab ensure we have data
+  useEffect(() => {
+    if (activeTab === 'services') {
+      // reset any search/filter state so user sees full list
+      setSearchTerm('');
+      setFilterCategory('all');
+
+      if (services.length === 0) {
+        fetchServices();
+      }
+    }
+  }, [activeTab]);
 
   type Booking = { id: number; service: string; provider: string; date: string; status: string; price: string };
 
   const [bookingDialogOpen, setBookingDialogOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [isEditingBooking, setIsEditingBooking] = useState(false);
+  const [editForm, setEditForm] = useState({ date: '', notes: '', fullAddress: '', timeSlot: '', isUrgent: false });
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [schedule, setSchedule] = useState({ date: "", time: "" });
@@ -146,6 +222,15 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
   const [otpOpen, setOtpOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  
+  // change password dialog state
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [showForgotOption, setShowForgotOption] = useState(false);
 
   const [defaultMethod, setDefaultMethod] = useState('upi');
   const [currency, setCurrency] = useState<'INR' | 'USD' | 'EUR'>('INR');
@@ -167,6 +252,101 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
     navigateTo(`/book-service?service=${encodeURIComponent(serviceName)}`);
   };
 
+  const handleProfileInputChange = (field: 'name' | 'email' | 'phone' | 'address', value: string) => {
+    setProfileForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleProfileSave = async () => {
+    if (!userId) return;
+
+    try {
+      setIsSavingProfile(true);
+      const updated = await api.put<UserProfile>(`/user/profile/${userId}`, profileForm);
+      setUserProfile(updated);
+      setOriginalProfile(updated);
+      setProfileForm({
+        name: updated.name || '',
+        email: updated.email || '',
+        phone: updated.phone || '',
+        address: updated.address || ''
+      });
+      alert('Profile updated successfully');
+    } catch (error) {
+      console.error('Failed to update profile', error);
+      alert('Failed to update profile');
+    } finally {
+      setIsSavingProfile(false);
+      if (!isSavingProfile) {
+        // after successful save exit edit mode
+        setIsEditingProfile(false);
+      }
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!userId) return;
+    setPasswordError('');
+    setShowForgotOption(false);
+    if (newPassword !== confirmPassword) {
+      alert("New passwords don't match");
+      return;
+    }
+    if (!currentPassword || !newPassword) {
+      alert('Please fill out all fields');
+      return;
+    }
+    try {
+      setIsChangingPassword(true);
+      await api.post(`/user/change-password/${userId}`, {
+        currentPassword,
+        newPassword
+      });
+      alert('Password changed successfully');
+      setChangePasswordOpen(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      console.error('Failed to change password', err);
+      if (err.response?.status === 400 && err.response?.data?.message === 'Current password incorrect') {
+        setPasswordError('Current password is incorrect.');
+        setShowForgotOption(true);
+      } else {
+        alert('Failed to change password');
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const isSameValue = (a?: string, b?: string) => (a || '').trim() === (b || '').trim();
+  const hasProfileChanges = !!originalProfile && (
+    !isSameValue(profileForm.name, originalProfile.name) ||
+    !isSameValue(profileForm.email, originalProfile.email) ||
+    !isSameValue(profileForm.phone, originalProfile.phone) ||
+    !isSameValue(profileForm.address, originalProfile.address)
+  );
+
+  const profileChecklist = [
+    { key: 'name', label: 'Full name', value: userProfile?.name },
+    { key: 'email', label: 'Email', value: userProfile?.email },
+    { key: 'phone', label: 'Phone number', value: userProfile?.phone },
+    { key: 'address', label: 'Address', value: userProfile?.address },
+  ];
+  const completedProfileFields = profileChecklist.filter((item) => !!item.value?.trim()).length;
+  const profileCompletion = Math.round((completedProfileFields / profileChecklist.length) * 100);
+  const missingProfileFields = profileChecklist.filter((item) => !item.value?.trim());
+
+  const resetProfileForm = () => {
+    if (!originalProfile) return;
+    setProfileForm({
+      name: originalProfile.name || '',
+      email: originalProfile.email || '',
+      phone: originalProfile.phone || '',
+      address: originalProfile.address || ''
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-blue-50 to-background">
       {/* Header
@@ -186,7 +366,7 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { logout(); }}>
+            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -269,7 +449,7 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
 
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back, {userName}</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Welcome back, John!</h1>
           <p className="text-muted-foreground">Manage your bookings and stay on top of every service request</p>
         </div>
 
@@ -348,22 +528,26 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
 
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigateTo('/book-service')}>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigateTo('/home-services')}>
                 <CardContent className="p-6 text-center">
-                  <HomeIcon className="h-12 w-12 mx-auto mb-4 text-blue-600" />
-                  <h3 className="font-semibold mb-2">Book Home Service</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Cleaning, plumbing, electrical & more</p>
-                  <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateTo('/book-service'); }}>
+                  <div className="p-3 bg-blue-100 rounded-lg inline-block mb-4 group-hover:bg-blue-200 transition-colors">
+                    <HomeIcon className="h-8 w-8 text-blue-600" />
+                  </div>
+                  <h3 className="font-semibold mb-2 text-lg">Book Home Service</h3>
+                  <p className="text-sm text-muted-foreground mb-4">Plumbing, electrical, cleaning & repairs</p>
+                  <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateTo('/home-services'); }}>
                     Book Now
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 </CardContent>
               </Card>
 
-              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigateTo('/book-machine-service')}>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigateTo('/book-machine-service')}>
                 <CardContent className="p-6 text-center">
-                  <Settings className="h-12 w-12 mx-auto mb-4 text-green-600" />
-                  <h3 className="font-semibold mb-2">Machine Services</h3>
+                  <div className="p-3 bg-green-100 rounded-lg inline-block mb-4 group-hover:bg-green-200 transition-colors">
+                    <Settings className="h-8 w-8 text-green-600" />
+                  </div>
+                  <h3 className="font-semibold mb-2 text-lg">Machine Services</h3>
                   <p className="text-sm text-muted-foreground mb-4">AC, washing machine, refrigerator</p>
                   <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateTo('/book-machine-service'); }}>
                     Book Now
@@ -372,10 +556,12 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                 </CardContent>
               </Card>
 
-              <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => navigateTo('/vehicle-services')}>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => navigateTo('/vehicle-services')}>
                 <CardContent className="p-6 text-center">
-                  <Car className="h-12 w-12 mx-auto mb-4 text-indigo-600" />
-                  <h3 className="font-semibold mb-2">Vehicle Services</h3>
+                  <div className="p-3 bg-indigo-100 rounded-lg inline-block mb-4 group-hover:bg-indigo-200 transition-colors">
+                    <Car className="h-8 w-8 text-indigo-600" />
+                  </div>
+                  <h3 className="font-semibold mb-2 text-lg">Vehicle Services</h3>
                   <p className="text-sm text-muted-foreground mb-4">Repair, roadside assistance, towing</p>
                   <Button className="w-full" onClick={(e) => { e.stopPropagation(); navigateTo('/vehicle-services'); }}>
                     Book Now
@@ -447,6 +633,88 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
 
           {/* All Services Tab */}
           <TabsContent value="services">
+            {services.length > 0 ? (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-foreground">All Services</h2>
+                    <p className="text-muted-foreground">Explore all available services with detailed information</p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Input
+                      placeholder="Search services..."
+                      className="w-64"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    <Select value={filterCategory} onValueChange={setFilterCategory}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Filter by category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {uniqueCategories.map((cat) => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {displayedCategories.map((cat) => (
+                  <Card key={cat}>
+                    <CardHeader>
+                      <CardTitle className="flex items-center">
+                        <HomeIcon className="h-5 w-5 mr-2 text-green-600" />
+                        {cat}
+                      </CardTitle>
+                      <CardDescription>Services in {cat}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {services
+                          .filter((s) => s.category === cat)
+                          .filter(
+                            (s) =>
+                              s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              s.description.toLowerCase().includes(searchTerm.toLowerCase())
+                          )
+                          .map((s) => (
+                            <Card key={s._id} className="hover:shadow-lg transition-shadow">
+                              <CardContent className="p-4">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="font-semibold">{s.title}</div>
+                                  {s.price !== undefined && (
+                                    <Badge variant="outline" className="text-xs">
+                                      ₹{s.price}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-3">{s.description}</p>
+                                <div className="flex space-x-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() =>
+                                      navigateTo(
+                                        `/book-service?service=${encodeURIComponent(s.title)}`
+                                      )
+                                    }
+                                  >
+                                    Book Now
+                                  </Button>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-sm text-muted-foreground">Loading services...</div>
+            )}
+            {false && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -814,7 +1082,7 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                   <CardDescription>End-to-end construction and interior projects</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ContractServicesGrid />
+                  <div className="text-center text-sm text-muted-foreground">Contract services will appear here.</div>
                 </CardContent>
               </Card>
 
@@ -915,6 +1183,7 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
               </Card>
 
             </div>
+          )}
           </TabsContent>
 
           <TabsContent value="bookings">
@@ -939,14 +1208,40 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                       <div className="flex items-center space-x-3">
                         <div className="text-right">
                           <div className="font-medium">{booking.price}</div>
-                          <Badge variant={booking.status === 'Completed' ? 'default' : 'secondary'}>
-                            {booking.status}
+                          <Badge
+                            variant={
+                              booking.status === 'completed'
+                                ? 'default'
+                                : booking.status === 'cancelled'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                          >
+                            {booking.status === 'completed'
+                              ? 'Completed'
+                              : booking.status === 'cancelled'
+                              ? 'Cancelled'
+                              : booking.status}
                           </Badge>
                         </div>
-                        <Button size="sm" variant="outline" onClick={() => { setSelectedBooking(booking); setBookingDialogOpen(true); }}>
-                          View Details
-                        </Button>
+                        {booking.status === 'pending' ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => handleEditBooking(booking)}>
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDeleteBooking(booking)}>
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => { setSelectedBooking(booking); setIsEditingBooking(false); setBookingDialogOpen(true); }}>
+                            View Details
+                          </Button>
+                        )}
                       </div>
+                      {booking.status === 'cancelled' && booking.declineNote && (
+                        <div className="text-xs text-muted-foreground mt-2">Provider note: {booking.declineNote}</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1062,28 +1357,34 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="flex items-center space-x-4">
-                        <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">J</div>
+                        <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                          {(userProfile?.name?.[0] || 'U').toUpperCase()}
+                        </div>
                         <div>
-                          <div className="text-lg font-semibold">John Doe</div>
-                          <div className="text-sm text-muted-foreground">john.doe@email.com • +91-98765-43210</div>
+                          <div className="text-lg font-semibold">{userProfile?.name || 'Name not added'}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {userProfile?.email || 'Email not added'} • {userProfile?.phone || 'Phone not added'}
+                          </div>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <div className="text-muted-foreground">Address</div>
-                          <div className="font-medium">Bandra West, Mumbai</div>
+                          <div className="font-medium">{userProfile?.address || 'Address not added'}</div>
                         </div>
                         <div>
                           <div className="text-muted-foreground">Member Since</div>
-                          <div className="font-medium">2023</div>
+                          <div className="font-medium">
+                            {userProfile?.createdAt ? new Date(userProfile.createdAt).getFullYear() : 'N/A'}
+                          </div>
                         </div>
                         <div>
                           <div className="text-muted-foreground">Total Bookings</div>
-                          <div className="font-medium">24</div>
+                          <div className="font-medium">{dashboardStats.totalBookings}</div>
                         </div>
                         <div>
                           <div className="text-muted-foreground">Completed Services</div>
-                          <div className="font-medium">18</div>
+                          <div className="font-medium">{dashboardStats.completedServices}</div>
                         </div>
                       </div>
                       <div className="p-4 border rounded-lg">
@@ -1097,23 +1398,74 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                     </div>
                     <div className="space-y-4">
                       <div className="p-4 border rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="font-medium">Current Saved Data</div>
+                          <Badge variant="outline">{profileCompletion}% complete</Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <div>Name: <span className="text-foreground">{originalProfile?.name || 'Not added'}</span></div>
+                          <div>Email: <span className="text-foreground">{originalProfile?.email || 'Not added'}</span></div>
+                          <div>Phone: <span className="text-foreground">{originalProfile?.phone || 'Not added'}</span></div>
+                          <div>Address: <span className="text-foreground">{originalProfile?.address || 'Not added'}</span></div>
+                        </div>
+                      </div>
+                      {isEditingProfile && (
+                      <div className="p-4 border rounded-lg">
                         <div className="font-medium mb-2">Personal Info</div>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          <Input placeholder="Name" defaultValue="John Doe" />
-                          <Input placeholder="Email" defaultValue="john.doe@email.com" />
-                          <Input placeholder="Phone" defaultValue="+91-98765-43210" />
-                          <Input placeholder="Location" defaultValue="Bandra West, Mumbai" />
+                          <Input
+                            placeholder="Name"
+                            value={profileForm.name}
+                            onChange={(e) => handleProfileInputChange('name', e.target.value)}
+                          />
+                          <Input
+                            placeholder="Email"
+                            value={profileForm.email}
+                            onChange={(e) => handleProfileInputChange('email', e.target.value)}
+                          />
+                          <Input
+                            placeholder="Phone"
+                            value={profileForm.phone}
+                            onChange={(e) => handleProfileInputChange('phone', e.target.value)}
+                          />
+                          <Input
+                            placeholder="Location"
+                            value={profileForm.address}
+                            onChange={(e) => handleProfileInputChange('address', e.target.value)}
+                          />
                         </div>
-                        <div className="flex justify-end gap-2 mt-3"><Button variant="outline">Save</Button></div>
+                        <div className="flex justify-end gap-2 mt-3">
+                          <Button variant="outline" onClick={resetProfileForm} disabled={!hasProfileChanges || isSavingProfile}>
+                            Reset
+                          </Button>
+                          <Button variant="outline" onClick={handleProfileSave} disabled={!hasProfileChanges || isSavingProfile}>
+                            Save
+                          </Button>
+                          <Button variant="outline" onClick={() => { resetProfileForm(); setIsEditingProfile(false); }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                      )}
+
+                      <div className="p-4 border rounded-lg">
+                        <div className="font-medium mb-2">Profile Completion Suggestions</div>
+                        {missingProfileFields.length === 0 ? (
+                          <div className="text-sm text-green-700">Your profile is complete.</div>
+                        ) : (
+                          <div className="space-y-1 text-sm text-muted-foreground">
+                            {missingProfileFields.map((field) => (
+                              <div key={field.key}>Add your {field.label.toLowerCase()} to improve profile trust and faster booking.</div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="p-4 border rounded-lg">
                         <div className="font-medium mb-2">Account Actions</div>
                         <div className="flex flex-wrap gap-2">
                           <Button variant="outline">Edit Profile</Button>
                           <Button variant="outline">Change Password</Button>
-                          <Button variant="outline" onClick={() => { logout(); }}>
-                            Logout
-                          </Button>
+                          <Button variant="outline" onClick={() => { window.location.href = '/'; }}>Logout</Button>
                         </div>
                       </div>
                     </div>
@@ -1136,6 +1488,7 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                         </div>
                         <Button size="sm" variant="outline" onClick={() => handleFavoriteRebook(service.name)}>
                           Rebook
+
                         </Button>
                       </div>
                     ))}
@@ -1211,25 +1564,106 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
         <Dialog open={bookingDialogOpen} onOpenChange={setBookingDialogOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Booking Details</DialogTitle>
-              <DialogDescription>Complete information about your booking</DialogDescription>
+              <DialogTitle>{isEditingBooking ? 'Edit Booking' : 'Booking Details'}</DialogTitle>
+              <DialogDescription>{isEditingBooking ? 'Modify your booking' : 'Complete information about your booking'}</DialogDescription>
             </DialogHeader>
             {selectedBooking && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="font-medium">{selectedBooking.service}</div>
-                  <Badge variant={selectedBooking.status === 'Completed' ? 'default' : 'secondary'}>
-                    {selectedBooking.status}
-                  </Badge>
-                </div>
-                <div className="text-sm text-muted-foreground">Provider: {selectedBooking.provider}</div>
-                <div className="text-sm text-muted-foreground">When: {selectedBooking.date}</div>
-                <div className="text-sm">Price: {selectedBooking.price}</div>
-                <div className="pt-2">
-                  <Button className="w-full" asChild>
-                    <a href={`/booking-confirmation?booking=BK${selectedBooking.id.toString().padStart(4,'0')}&service=${encodeURIComponent(selectedBooking.service)}`}>Go to Booking Page</a>
-                  </Button>
-                </div>
+                {isEditingBooking ? (
+                  <>
+                    <div>
+                      <Label htmlFor="edit-date">Date</Label>
+                      <Input
+                        id="edit-date"
+                        type="date"
+                        value={editForm.date}
+                        onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-time">Time Slot</Label>
+                      <select
+                        id="edit-time"
+                        className="w-full border p-2 rounded"
+                        value={editForm.timeSlot}
+                        onChange={(e) => setEditForm({ ...editForm, timeSlot: e.target.value })}
+                      >
+                        <option value="">Select</option>
+                        {timeSlots.map((slot) => (
+                          <option key={slot.id} value={slot.id}>
+                            {slot.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-address">Address</Label>
+                      <Input
+                        id="edit-address"
+                        value={editForm.fullAddress}
+                        onChange={(e) => setEditForm({ ...editForm, fullAddress: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={editForm.isUrgent}
+                        onCheckedChange={(val) => setEditForm({ ...editForm, isUrgent: val })}
+                      />
+                      <span>Urgent</span>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-notes">Notes</Label>
+                      <Input
+                        id="edit-notes"
+                        value={editForm.notes}
+                        onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button variant="outline" onClick={() => { setBookingDialogOpen(false); setIsEditingBooking(false); }}>
+                        Cancel
+                      </Button>
+                      <Button onClick={async () => {
+                        try {
+                          await api.put(`/bookings/${selectedBooking.id}`, {
+                            date: editForm.date,
+                            notes: editForm.notes,
+                            fullAddress: editForm.fullAddress,
+                            timeSlot: editForm.timeSlot,
+                            isUrgent: editForm.isUrgent
+                          });
+                          alert('Booking updated');
+                          fetchBookings();
+                        } catch (e) {
+                          console.error('Edit failed', e);
+                          alert('Update failed');
+                        } finally {
+                          setBookingDialogOpen(false);
+                          setIsEditingBooking(false);
+                        }
+                      }}>
+                        Save
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium">{selectedBooking.service}</div>
+                      <Badge variant={selectedBooking.status === 'Completed' ? 'default' : 'secondary'}>
+                        {selectedBooking.status}
+                      </Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground">Provider: {selectedBooking.provider}</div>
+                    <div className="text-sm text-muted-foreground">When: {selectedBooking.date}</div>
+                    <div className="text-sm">Price: {selectedBooking.price}</div>
+                    <div className="pt-2">
+                      <Button className="w-full" asChild>
+                        <a href={`/booking-confirmation?booking=BK${selectedBooking.id.toString().padStart(4,'0')}&service=${encodeURIComponent(selectedBooking.service)}`}>Go to Booking Page</a>
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </DialogContent>
@@ -1288,7 +1722,7 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
                 </div>
                 <div>
                   <Label htmlFor="user-name">Name on Card</Label>
-                  <Input id="user-name" placeholder="John Doe" />
+                  <Input id="user-name" placeholder={userProfile?.name || "John Doe"} />
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -1341,6 +1775,48 @@ import { requireAuth, getUserId, logout } from "../lib/auth";
             <div className="space-y-3 text-sm">
               <div className="p-3 border rounded">Sample invoice details will appear here.</div>
               <Button onClick={() => { const blob = new Blob([JSON.stringify({ sample: true, date: new Date().toISOString() }, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'invoice.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }}>Download</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Change password dialog */}
+        <Dialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Change Password</DialogTitle>
+              <DialogDescription>Enter current and new password</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Input
+                type="password"
+                placeholder="Current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+              {passwordError && <div className="text-sm text-red-600">{passwordError}</div>}
+              {showForgotOption && (
+                <div className="text-sm mt-1">
+                  <a href="/forgot-password" className="text-blue-600 underline">Forgot password?</a>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setChangePasswordOpen(false)} disabled={isChangingPassword}>Cancel</Button>
+                <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+                  {isChangingPassword ? 'Changing...' : 'Save'}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

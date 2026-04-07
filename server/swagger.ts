@@ -38,7 +38,7 @@ const options = {
             id: { type: 'string' },
             title: { type: 'string' },
             description: { type: 'string' },
-            price: { type: 'number' },
+            price: { type: 'string' },
             category: { type: 'string' },
           },
         },
