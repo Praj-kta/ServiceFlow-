@@ -29,76 +29,322 @@ import {
   Building,
   FileText
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { useLocation, useNavigate } from "react-router-dom";
+
+type AuthResponse = {
+  token: string;
+  user: {
+    id: string;
+    role: string;
+    name: string;
+    email: string;
+  };
+};
+
+type FormField =
+  | "name"
+  | "email"
+  | "password"
+  | "confirmPassword"
+  | "phone"
+  | "address"
+  | "companyName"
+  | "categories"
+  | "experience"
+  | "isAcceptedTerms";
+
+type FormErrors = Partial<Record<FormField, string>>;
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const phoneRegex = /^\d{10}$/;
+const nameRegex = /^[A-Za-z\s.'-]+$/;
+
+const getStrongPasswordError = (password: string) => {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters long";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must include at least one uppercase letter";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must include at least one lowercase letter";
+  }
+  if (!/\d/.test(password)) {
+    return "Password must include at least one number";
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return "Password must include at least one special character";
+  }
+
+  return "";
+};
+
+const getPasswordChecks = (password: string) => [
+  {
+    label: "At least 8 characters",
+    passed: password.length >= 8,
+  },
+  {
+    label: "One uppercase letter",
+    passed: /[A-Z]/.test(password),
+  },
+  {
+    label: "One lowercase letter",
+    passed: /[a-z]/.test(password),
+  },
+  {
+    label: "One number",
+    passed: /\d/.test(password),
+  },
+  {
+    label: "One special character",
+    passed: /[^A-Za-z0-9]/.test(password),
+  },
+];
+
+const sanitizeNameInput = (value: string) =>
+  value.replace(/[^A-Za-z\s.'-]/g, "");
 
 export default function ProviderLogin() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     phone: '',
     address: '',
     companyName: '',
     categories: [] as string[],
-    experience: ''
+    experience: '',
+    isAcceptedTerms: false,
   });
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
   const [forgotError, setForgotError] = useState('');
 
-  const handleInputChange = (field: string, value: string | string[]) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  useEffect(() => {
+    setIsSignUp(location.pathname === '/signup-provider');
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (
+      location.pathname === '/login-provider' &&
+      params.get('registered') === '1'
+    ) {
+      setSuccessMessage('Registration successful. Please sign in to continue.');
+      const email = params.get('email');
+      if (email) {
+        setFormData((prev) => ({
+          ...prev,
+          email,
+          password: '',
+          confirmPassword: '',
+        }));
+      }
+    } else {
+      setSuccessMessage('');
+    }
+  }, [location.pathname, location.search]);
+
+  const validateField = (
+    field: FormField,
+    nextFormData = formData,
+  ) => {
+    switch (field) {
+      case "email":
+        if (!nextFormData.email.trim()) {
+          return submitAttempted ? "Email is required" : "";
+        }
+        return emailRegex.test(nextFormData.email.trim())
+          ? ""
+          : "Please enter a valid email address";
+      case "password":
+        if (!nextFormData.password.trim()) {
+          return submitAttempted ? "Password is required" : "";
+        }
+        if (isSignUp) {
+          return getStrongPasswordError(nextFormData.password);
+        }
+        return "";
+      case "confirmPassword":
+        if (!isSignUp) return "";
+        if (!nextFormData.confirmPassword.trim()) {
+          return submitAttempted ? "Please confirm your password" : "";
+        }
+        return nextFormData.password === nextFormData.confirmPassword
+          ? ""
+          : "Passwords do not match";
+      case "phone":
+        if (!isSignUp) return "";
+        if (!nextFormData.phone.trim()) {
+          return submitAttempted ? "Business phone is required" : "";
+        }
+        return phoneRegex.test(nextFormData.phone)
+          ? ""
+          : "Phone number must be exactly 10 digits";
+      case "name":
+        if (!isSignUp) return "";
+        if (!nextFormData.name.trim()) {
+          return submitAttempted ? "Owner name is required" : "";
+        }
+        return nameRegex.test(nextFormData.name.trim())
+          ? ""
+          : "Only letters are allowed in owner name";
+      case "companyName":
+        if (!isSignUp) return "";
+        return nextFormData.companyName.trim()
+          ? ""
+          : submitAttempted
+            ? "Business name is required"
+            : "";
+      case "address":
+        if (!isSignUp) return "";
+        return nextFormData.address.trim()
+          ? ""
+          : submitAttempted
+            ? "Service area is required"
+            : "";
+      case "categories":
+        if (!isSignUp) return "";
+        return nextFormData.categories.length
+          ? ""
+          : submitAttempted
+            ? "Please select at least one service category"
+            : "";
+      case "experience":
+        if (!isSignUp) return "";
+        return nextFormData.experience
+          ? ""
+          : submitAttempted
+            ? "Please select your experience level"
+            : "";
+      case "isAcceptedTerms":
+        if (!isSignUp) return "";
+        return nextFormData.isAcceptedTerms
+          ? ""
+          : submitAttempted
+            ? "Please accept the Provider Terms & Conditions"
+            : "";
+      default:
+        return "";
+    }
+  };
+
+  const handleInputChange = (
+    field: FormField,
+    value: string | string[] | boolean,
+  ) => {
+    const normalizedValue =
+      field === "name" && typeof value === "string"
+        ? sanitizeNameInput(value)
+        : field === "phone" && typeof value === "string"
+          ? value.replace(/\D/g, "").slice(0, 10)
+          : value;
+
+    const nextFormData = { ...formData, [field]: normalizedValue };
+    setFormData(nextFormData);
     setError('');
+    setSuccessMessage('');
+
+    const nextErrors: FormErrors = {
+      ...fieldErrors,
+      [field]: validateField(field, nextFormData),
+    };
+
+    if (field === "password" && isSignUp) {
+      nextErrors.confirmPassword = validateField("confirmPassword", nextFormData);
+    }
+
+    setFieldErrors(nextErrors);
+  };
+
+  const validateForm = () => {
+    const errors: FormErrors = {};
+    const trimmedEmail = formData.email.trim();
+    const trimmedPassword = formData.password.trim();
+
+    if (!trimmedEmail) {
+      errors.email = "Email is required";
+    } else if (!emailRegex.test(trimmedEmail)) {
+      errors.email = "Please enter a valid email address";
+    }
+
+    if (!trimmedPassword) {
+      errors.password = "Password is required";
+    } else if (isSignUp) {
+      const passwordError = getStrongPasswordError(formData.password);
+      if (passwordError) {
+        errors.password = passwordError;
+      }
+    }
+
+    if (isSignUp) {
+      if (!formData.companyName.trim()) {
+        errors.companyName = "Business name is required";
+      }
+
+      if (!formData.name.trim()) {
+        errors.name = "Owner name is required";
+      } else if (!nameRegex.test(formData.name.trim())) {
+        errors.name = "Only letters are allowed in owner name";
+      }
+
+      if (!formData.categories.length) {
+        errors.categories = "Please select at least one service category";
+      }
+
+      if (!formData.phone.trim()) {
+        errors.phone = "Business phone is required";
+      } else if (!phoneRegex.test(formData.phone.trim())) {
+        errors.phone = "Please enter a valid phone number";
+      }
+
+      if (!formData.address.trim()) {
+        errors.address = "Service area is required";
+      }
+
+      if (!formData.experience) {
+        errors.experience = "Please select your experience level";
+      }
+
+      if (!formData.confirmPassword.trim()) {
+        errors.confirmPassword = "Please confirm your password";
+      } else if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = "Passwords do not match";
+      }
+
+      if (!formData.isAcceptedTerms) {
+        errors.isAcceptedTerms = "Please accept the Provider Terms & Conditions";
+      }
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    // Validate required fields
-    if (!formData.email || !formData.email.trim()) {
-      setError('Email is required');
+    setSuccessMessage('');
+    setSubmitAttempted(true);
+
+    if (!validateForm()) {
+      setError('Please fix the highlighted fields.');
       return;
-    }
-    
-    if (!formData.password || !formData.password.trim()) {
-      setError('Password is required');
-      return;
-    }
-    
-    // Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-    
-    // Password length validation
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-    
-    // Additional validation for provider sign up
-    if (isSignUp) {
-      if (!formData.name || !formData.name.trim()) {
-        setError('Owner name is required');
-        return;
-      }
-      if (!formData.companyName || !formData.companyName.trim()) {
-        setError('Business name is required');
-        return;
-      }
-      if (!formData.categories?.length) {
-        setError('Please select at least one service category');
-        return;
-      }
     }
     
     setLoading(true);
@@ -108,7 +354,7 @@ export default function ProviderLogin() {
 
       if (isSignUp) {
         // Provider Registration
-        const res: any = await api.post('/auth/register', {
+        await api.post<AuthResponse>('/auth/register', {
           name: formData.name,
           email: normalizedEmail,
           password: formData.password,
@@ -121,13 +367,22 @@ export default function ProviderLogin() {
             experience: formData.experience
           }
         });
-        localStorage.setItem('authToken', res.token);
-        localStorage.setItem('userId', res.user.id);
-        localStorage.setItem('userRole', res.user.role);
-        window.location.href = '/provider-dashboard';
+        setFormData({
+          name: '',
+          email: normalizedEmail,
+          password: '',
+          confirmPassword: '',
+          phone: '',
+          address: '',
+          companyName: '',
+          categories: [],
+          experience: '',
+          isAcceptedTerms: false,
+        });
+        navigate(`/login-provider?registered=1&email=${encodeURIComponent(normalizedEmail)}`);
       } else {
         // Provider Login
-        const res: any = await api.post('/auth/login', {
+        const res = await api.post<AuthResponse>('/auth/login', {
           email: normalizedEmail,
           password: formData.password
         });
@@ -144,6 +399,15 @@ export default function ProviderLogin() {
     }
   };
 
+  const getFieldStyles = (field: FormField, baseClassName = "") =>
+    cn(
+      baseClassName,
+      fieldErrors[field] && "border-red-300 bg-red-50/40 focus-visible:ring-red-200",
+    );
+
+  const getLabelStyles = (field: FormField) =>
+    cn(fieldErrors[field] && "text-red-600");
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-green-50 to-background">
       {/* Header */}
@@ -156,7 +420,7 @@ export default function ProviderLogin() {
             <h1 className="text-2xl font-bold text-foreground">ServiceFlow</h1>
           </div>
           <Button variant="outline" asChild>
-            <a href="/user-dashboard?tab=services">
+            <a href="/">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to All Services
             </a>
@@ -192,49 +456,60 @@ export default function ProviderLogin() {
                   {error}
                 </div>
               )}
+              {successMessage && (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                  {successMessage}
+                </div>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
               {isSignUp && (
                 <>
                   <div>
-                    <Label htmlFor="businessName">Business Name</Label>
+                    <Label htmlFor="businessName" className={getLabelStyles("companyName")}>Business Name</Label>
                     <div className="relative">
                       <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input 
                         id="businessName"
                         type="text"
                         placeholder="Enter your business name"
-                        className="pl-10"
+                        className={getFieldStyles("companyName", "pl-10")}
                         value={formData.companyName}
                         onChange={(e) => handleInputChange('companyName', e.target.value)}
                         required
                       />
                     </div>
+                    {fieldErrors.companyName && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.companyName}</p>
+                    )}
                   </div>
 
                   <div>
-                    <Label htmlFor="ownerName">Owner Name</Label>
+                    <Label htmlFor="ownerName" className={getLabelStyles("name")}>Owner Name</Label>
                     <div className="relative">
                       <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input 
                         id="ownerName"
                         type="text"
                         placeholder="Enter owner's full name"
-                        className="pl-10"
+                        className={getFieldStyles("name", "pl-10")}
                         value={formData.name}
                         onChange={(e) => handleInputChange('name', e.target.value)}
                         required
                       />
                     </div>
+                    {fieldErrors.name && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>
+                    )}
                   </div>
 
                   <div>
-                    <Label>Service Categories</Label>
+                    <Label className={getLabelStyles("categories")}>Service Categories</Label>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
-                          className="w-full justify-between text-left"
+                          className={getFieldStyles("categories", "w-full justify-between text-left")}
                         >
                           {formData.categories.length
                             ? formData.categories.join(', ')
@@ -265,65 +540,79 @@ export default function ProviderLogin() {
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    {fieldErrors.categories && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.categories}</p>
+                    )}
                   </div>
                 </>
               )}
 
               <div>
-                <Label htmlFor="email">Business Email</Label>
+                <Label htmlFor="email" className={getLabelStyles("email")}>Business Email</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input 
                     id="email"
                     type="email"
                     placeholder="Enter your business email"
-                    className="pl-10"
+                    className={getFieldStyles("email", "pl-10")}
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
                     required
                   />
                 </div>
+                {fieldErrors.email && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
+                )}
               </div>
 
               {isSignUp && (
                 <div>
-                  <Label htmlFor="phone">Business Phone</Label>
+                  <Label htmlFor="phone" className={getLabelStyles("phone")}>Business Phone</Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="phone"
                       type="tel"
-                      placeholder="+91 9876543210"
-                      className="pl-10"
+                      placeholder="Enter 10 digit phone number"
+                      className={getFieldStyles("phone", "pl-10")}
                       value={formData.phone}
                       onChange={(e) => handleInputChange('phone', e.target.value)}
+                      inputMode="numeric"
+                      maxLength={10}
                     />
                   </div>
+                  {fieldErrors.phone && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>
+                  )}
                 </div>
               )}
 
               {isSignUp && (
                 <div>
-                  <Label htmlFor="serviceArea">Service Area</Label>
+                  <Label htmlFor="serviceArea" className={getLabelStyles("address")}>Service Area</Label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="serviceArea"
                       type="text"
                       placeholder="Enter your service area/city"
-                      className="pl-10"
+                      className={getFieldStyles("address", "pl-10")}
                       value={formData.address}
                       onChange={(e) => handleInputChange('address', e.target.value)}
                     />
                   </div>
+                  {fieldErrors.address && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.address}</p>
+                  )}
                 </div>
               )}
 
               {isSignUp && (
                 <div>
-                  <Label htmlFor="experience">Years of Experience</Label>
+                  <Label htmlFor="experience" className={getLabelStyles("experience")}>Years of Experience</Label>
                   <Select value={formData.experience} onValueChange={(value) => handleInputChange('experience', value)}>
-                    <SelectTrigger>
+                    <SelectTrigger className={getFieldStyles("experience")}>
                       <SelectValue placeholder="Select experience level" />
                     </SelectTrigger>
                     <SelectContent>
@@ -334,6 +623,9 @@ export default function ProviderLogin() {
                       <SelectItem value="10+">10+ years</SelectItem>
                     </SelectContent>
                   </Select>
+                  {fieldErrors.experience && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.experience}</p>
+                  )}
                 </div>
               )}
 
@@ -353,14 +645,14 @@ export default function ProviderLogin() {
               )}
 
               <div>
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className={getLabelStyles("password")}>Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input 
                     id="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
-                    className="pl-10 pr-10"
+                    className={getFieldStyles("password", "pl-10 pr-10")}
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
                     required
@@ -377,28 +669,59 @@ export default function ProviderLogin() {
                     )}
                   </button>
                 </div>
+                {isSignUp &&
+                  getPasswordChecks(formData.password).some((rule) => !rule.passed) && (
+                    <div className="mt-2 space-y-1 text-sm">
+                      {getPasswordChecks(formData.password)
+                        .filter((rule) => !rule.passed)
+                        .map((rule) => (
+                          <p key={rule.label} className="text-red-600">
+                            {rule.label}
+                          </p>
+                        ))}
+                    </div>
+                  )}
+                {fieldErrors.password && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.password}</p>
+                )}
               </div>
 
               {isSignUp && (
                 <div>
-                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Label htmlFor="confirmPassword" className={getLabelStyles("confirmPassword")}>Confirm Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="confirmPassword"
                       type="password"
                       placeholder="Confirm your password"
-                      className="pl-10"
+                      className={getFieldStyles("confirmPassword", "pl-10")}
+                      value={formData.confirmPassword}
+                      onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
                     />
                   </div>
+                  {fieldErrors.confirmPassword && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.confirmPassword}</p>
+                  )}
                 </div>
               )}
 
-              <div className="flex items-center space-x-2">
-                <Checkbox id="terms" />
-                <Label htmlFor="terms" className="text-sm">
-                  {isSignUp ? 'I agree to the Provider Terms & Conditions' : 'Remember me'}
-                </Label>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="terms"
+                    checked={formData.isAcceptedTerms}
+                    onCheckedChange={(checked) =>
+                      handleInputChange('isAcceptedTerms', checked === true)
+                    }
+                  />
+                  <Label htmlFor="terms" className={cn("text-sm", getLabelStyles("isAcceptedTerms"))}>
+                    {isSignUp ? 'I agree to the Provider Terms & Conditions' : 'Remember me'}
+                  </Label>
+                </div>
+                {isSignUp && fieldErrors.isAcceptedTerms && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.isAcceptedTerms}</p>
+                )}
               </div>
 
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
@@ -409,9 +732,18 @@ export default function ProviderLogin() {
 
               {!isSignUp && (
                 <div className="text-center">
-                  <a href="#" className="text-sm text-green-600 hover:underline">
+                  <button
+                    type="button"
+                    className="text-sm text-green-600 hover:underline"
+                    onClick={() => {
+                      setShowForgot(true);
+                      setForgotEmail(formData.email || '');
+                      setForgotError('');
+                      setForgotMessage('');
+                    }}
+                  >
                     Forgot your password?
-                  </a>
+                  </button>
                 </div>
               )}
 
@@ -419,7 +751,9 @@ export default function ProviderLogin() {
                 <p className="text-sm text-muted-foreground">
                   {isSignUp ? 'Already a provider?' : "New to ServiceFlow?"}
                   <button
-                    onClick={() => setIsSignUp(!isSignUp)}
+                    onClick={() =>
+                      navigate(isSignUp ? '/login-provider' : '/signup-provider')
+                    }
                     className="text-green-600 hover:underline ml-1"
                   >
                     {isSignUp ? 'Sign In' : 'Register as Provider'}

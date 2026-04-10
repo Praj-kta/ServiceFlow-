@@ -9,6 +9,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   ArrowLeft, 
   Mail, 
@@ -21,134 +30,276 @@ import {
   MapPin,
   CheckCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { loginSchema, registerSchema } from "@/lib/validation/authValidation";
-import { setErrorMap } from "zod";
+import { cn } from "@/lib/utils";
+import { useLocation, useNavigate } from "react-router-dom";
 
+type AuthResponse = {
+  token: string;
+  user: {
+    id: string;
+    role: string;
+    name: string;
+    email: string;
+  };
+};
+
+type FormField =
+  | "name"
+  | "email"
+  | "password"
+  | "confirmPassword"
+  | "phone"
+  | "address"
+  | "isAcceptedTerms";
+
+type FormErrors = Partial<Record<FormField, string>>;
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const phoneRegex = /^\d{10}$/;
+const nameRegex = /^[A-Za-z\s.'-]+$/;
+
+const getStrongPasswordError = (password: string) => {
+  if (password.length < 6) {
+    return "Password must be at least 6 characters long";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must include at least one uppercase letter";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must include at least one lowercase letter";
+  }
+  if (!/\d/.test(password)) {
+    return "Password must include at least one number";
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return "Password must include at least one special character";
+  }
+
+  return "";
+};
+
+const getPasswordChecks = (password: string) => [
+  {
+    label: "",
+    passed: password.length >= 6,
+  },
+  {
+    label: "One uppercase letter",
+    passed: /[A-Z]/.test(password),
+  },
+  {
+    label: "One lowercase letter",
+    passed: /[a-z]/.test(password),
+  },
+  {
+    label: "One number",
+    passed: /\d/.test(password),
+  },
+  {
+    label: "One special character",
+    passed: /[^A-Za-z0-9]/.test(password),
+  },
+];
+
+const sanitizeNameInput = (value: string) =>
+  value.replace(/[^A-Za-z\s.'-]/g, "");
 
 export default function UserLogin() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     phone: '',
-    address: ''
+    address: '',
+    isAcceptedTerms: false,
   });
   const [validationError, setValidationError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMessage, setForgotMessage] = useState('');
   const [forgotError, setForgotError] = useState('');
 
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    setValidationError("");
+  useEffect(() => {
+    setIsSignUp(location.pathname === "/signup-user");
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (location.pathname === "/login-user" && params.get("registered") === "1") {
+      setSuccessMessage("Registration successful. Please sign in to continue.");
+      const email = params.get("email");
+      if (email) {
+        setFormData((prev) => ({
+          ...prev,
+          email,
+          password: "",
+          confirmPassword: "",
+        }));
+      }
+    } else {
+      setSuccessMessage("");
+    }
+  }, [location.pathname, location.search]);
+
+  const validateField = (
+    field: FormField,
+    nextFormData = formData,
+  ) => {
+    switch (field) {
+      case "email":
+        if (!nextFormData.email.trim()) {
+          return submitAttempted ? "Email is required" : "";
+        }
+        return emailRegex.test(nextFormData.email.trim())
+          ? ""
+          : "Please enter a valid email address";
+      case "password":
+        if (!nextFormData.password.trim()) {
+          return submitAttempted ? "Password is required" : "";
+        } 
+        if (isSignUp) {
+          return getStrongPasswordError(nextFormData.password);
+        }
+        return "";
+      case "confirmPassword":
+        if (!isSignUp) return "";
+        if (!nextFormData.confirmPassword.trim()) {
+          return submitAttempted ? "Please confirm your password" : "";
+        }
+        return nextFormData.password === nextFormData.confirmPassword
+          ? ""
+          : "Passwords do not match";
+      case "phone":
+        if (!isSignUp) return "";
+        if (!nextFormData.phone.trim()) {
+          return submitAttempted ? "Phone number is required" : "";
+        }
+        return phoneRegex.test(nextFormData.phone)
+          ? ""
+          : "Phone number must be exactly 10 digits";
+      case "name":
+        if (!isSignUp) return "";
+        if (!nextFormData.name.trim()) {
+          return submitAttempted ? "Full name is required" : "";
+        }
+        return nameRegex.test(nextFormData.name.trim())
+          ? ""
+          : "Only letters are allowed in full name";
+      case "address":
+        if (!isSignUp) return "";
+        return nextFormData.address.trim()
+          ? ""
+          : submitAttempted
+            ? "Address is required"
+            : "";
+      case "isAcceptedTerms":
+        if (!isSignUp) return "";
+        return nextFormData.isAcceptedTerms
+          ? ""
+          : submitAttempted
+            ? "Please accept the Terms & Conditions"
+            : "";
+      default:
+        return "";
+    }
   };
 
-  // const
-  // handleSubmit = async (e: React.FormEvent) => {
-  //   e.preventDefault();
-  //   setValidationError('');
+  const handleInputChange = (field: FormField, value: string | boolean) => {
+    const normalizedValue =
+      field === "name" && typeof value === "string"
+        ? sanitizeNameInput(value)
+        : field === "phone" && typeof value === "string"
+          ? value.replace(/\D/g, "").slice(0, 10)
+          : value;
+    const nextFormData = { ...formData, [field]: normalizedValue };
+    setFormData(nextFormData);
+    setValidationError("");
+    setSuccessMessage("");
 
-  //   // Validate required fields
-  //   if (!formData.email || !formData.email.trim()) {
-  //     setValidationError('Email is required');
-  //     return;
-  //   }
+    const nextErrors: FormErrors = {
+      ...fieldErrors,
+      [field]: validateField(field, nextFormData),
+    };
 
-  //   if (!formData.password || !formData.password.trim()) {
-  //     setValidationError('Password is required');
-  //     return;
-  //   }
+    if (field === "password" && isSignUp) {
+      nextErrors.confirmPassword = validateField("confirmPassword", nextFormData);
+    }
 
-  //   // Email format validation
-  //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  //   if (!emailRegex.test(formData.email)) {
-  //     setValidationError('Please enter a valid email address');
-  //     return;
-  //   }
+    setFieldErrors(nextErrors);
+  };
 
-  //   // Password length validation
-  //   if (formData.password.length < 6) {
-  //     setValidationError('Password must be at least 6 characters');
-  //     return;
-  //   }
+  const validateForm = () => {
+    const errors: FormErrors = {};
+    const trimmedEmail = formData.email.trim();
+    const trimmedPassword = formData.password.trim();
 
-  //   // Additional validation for sign up
-  //   if (isSignUp) {
-  //     if (!formData.name || !formData.name.trim()) {
-  //       setValidationError('Name is required');
-  //       return;
-  //     }
-  //   }
+    if (!trimmedEmail) {
+      errors.email = "Email is required";
+    } else if (!emailRegex.test(trimmedEmail)) {
+      errors.email = "Please enter a valid email address";
+    }
 
-  //   setLoading(true);
+    if (!trimmedPassword) {
+      errors.password = "Password is required";
+    } else if (isSignUp) {
+      const passwordError = getStrongPasswordError(formData.password);
+      if (passwordError) {
+        errors.password = passwordError;
+      }
+    }
 
-  //   try {
-  //     if (isSignUp) {
-  //       // Registration
-  //       const res = await api.post('/auth/register', {
-  //         ...formData,
-  //         role: 'user'
-  //       });
-  //       console.log("Registration response:", res);
-  //       localStorage.setItem('authToken', res.token);
-  //       localStorage.setItem('userId', res.user.id);
-  //       localStorage.setItem('userRole', res.user.role);
-  //       window.location.href = '/user-dashboard';
-  //     } else {
-  //       // Login
-  //       const res = await api.post('/auth/login', {
-  //         email: formData.email,
-  //         password: formData.password
-  //       });
-  //       console.log("Login response:", res);
-  //       localStorage.setItem('authToken', res.token);
-  //       localStorage.setItem('userId', res.user.id);
-  //       localStorage.setItem('userRole', res.user.role);
-  //       localStorage.setItem('user', JSON.stringify(res.user));
-  //       window.location.href = '/user-dashboard';
-  //     }
-  //   } catch (err: any) {
-  //     setValidationError(err.message || 'Authentication failed. Please try again.');
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
+    if (isSignUp) {
+      if (!formData.name.trim()) {
+        errors.name = "Full name is required";
+      } else if (!nameRegex.test(formData.name.trim())) {
+        errors.name = "Only letters are allowed in full name";
+      }
+
+      if (!formData.phone.trim()) {
+        errors.phone = "Phone number is required";
+      } else if (!phoneRegex.test(formData.phone.trim())) {
+        errors.phone = "Please enter a valid phone number";
+      }
+
+      if (!formData.address.trim()) {
+        errors.address = "Address is required";
+      }
+
+      if (!formData.confirmPassword.trim()) {
+        errors.confirmPassword = "Please confirm your password";
+      } else if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = "Passwords do not match";
+      }
+
+      if (!formData.isAcceptedTerms) {
+        errors.isAcceptedTerms = "Please accept the Terms & Conditions";
+      }
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError("");
+    setSuccessMessage("");
+    setSubmitAttempted(true);
 
-    const schema = isSignUp ? registerSchema : loginSchema;
-
-    // validate correct fields
-    const dataToValidate = isSignUp
-      ? formData
-      : {
-          email: formData.email,
-          password: formData.password,
-        };
-
-    const { error } = schema.validate(dataToValidate, {
-      abortEarly: true,
-    });
-
-    if (error) {
-      setValidationError(error.details[0].message);
+    if (!validateForm()) {
+      setValidationError("Please fix the highlighted fields.");
       return;
-    }
-    
-    // Additional validation for sign up
-    if (isSignUp) {
-      if (!formData.name || !formData.name.trim()) {
-        setErrorMap('Name is required');
-        return;
-      }
     }
     
     setLoading(true);
@@ -157,23 +308,26 @@ export default function UserLogin() {
       const normalizedEmail = formData.email.trim().toLowerCase();
 
       if (isSignUp) {
-        // Registration
-        const res = await api.post('/auth/register', {
+        await api.post<AuthResponse>('/auth/register', {
           ...formData,
+          email: normalizedEmail,
           role: 'user'
         });
-
-        localStorage.setItem("authToken", res.token);
-        localStorage.setItem("userId", res.user.id);
-        localStorage.setItem("userRole", res.user.role);
-        localStorage.setItem("user", JSON.stringify(res.user));
-
-        window.location.href = "/user-dashboard";
+        setFormData({
+          name: "",
+          email: normalizedEmail,
+          password: "",
+          confirmPassword: "",
+          phone: "",
+          address: "",
+          isAcceptedTerms: false,
+        });
+        navigate(`/login-user?registered=1&email=${encodeURIComponent(normalizedEmail)}`);
 
       } else {
         // Login
-        const res = await api.post('/auth/login', {
-          email: formData.email,
+        const res = await api.post<AuthResponse>('/auth/login', {
+          email: normalizedEmail,
           password: formData.password
         });
 
@@ -192,6 +346,15 @@ export default function UserLogin() {
     }
   };
 
+  const getFieldStyles = (field: FormField, baseClassName = "") =>
+    cn(
+      baseClassName,
+      fieldErrors[field] && "border-red-300 bg-red-50/40 focus-visible:ring-red-200",
+    );
+
+  const getLabelStyles = (field: FormField) =>
+    cn(fieldErrors[field] && "text-red-600");
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-blue-50 to-background">
       {/* Header */}
@@ -204,7 +367,7 @@ export default function UserLogin() {
             <h1 className="text-2xl font-bold text-foreground">ServiceFlow</h1>
           </div>
           <Button variant="outline" asChild >
-            <a href="/user-dashboard?tab=services">
+            <a href="/">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to All Services
             </a>
@@ -244,34 +407,42 @@ export default function UserLogin() {
                   {validationError}
                 </div>
               )}
+              {successMessage && (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                  {successMessage}
+                </div>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
               {isSignUp && (
                 <div>
-                  <Label htmlFor="name">Full Name</Label>
+                  <Label htmlFor="name" className={getLabelStyles("name")}>Full Name</Label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="name"
                       type="text"
                       placeholder="Enter your full name"
-                      className="pl-10"
+                      className={getFieldStyles("name", "pl-10")}
                       value={formData.name}
                       onChange={(e) => handleInputChange('name', e.target.value)}
                       required
                     />
                   </div>
+                  {fieldErrors.name && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>
+                  )}
                 </div>
               )}
 
                 <div>
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email" className={getLabelStyles("email")}>Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="email"
                       type="email"
                       placeholder="Enter your email"
-                      className="pl-10"
+                      className={getFieldStyles("email", "pl-10")}
                       value={formData.email}
                       onChange={(e) =>
                         handleInputChange("email", e.target.value)
@@ -279,55 +450,66 @@ export default function UserLogin() {
                       required
                     />
                   </div>
+                  {fieldErrors.email && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
+                  )}
                 </div>
 
                 {isSignUp && (
                   <div>
-                    <Label htmlFor="phone">Phone Number</Label>
+                    <Label htmlFor="phone" className={getLabelStyles("phone")}>Phone Number</Label>
                     <div className="relative">
                       <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="phone"
                         type="tel"
-                        placeholder="+91 9876543210"
-                        className="pl-10"
+                        placeholder="Enter 10 digit phone number"
+                        className={getFieldStyles("phone", "pl-10")}
                         value={formData.phone}
                         onChange={(e) =>
                           handleInputChange("phone", e.target.value)
                         }
+                        inputMode="numeric"
+                        maxLength={10}
                       />
                     </div>
+                    {fieldErrors.phone && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>
+                    )}
                   </div>
                 )}
 
                 {isSignUp && (
                   <div>
-                    <Label htmlFor="address">Address</Label>
+                    <Label htmlFor="address" className={getLabelStyles("address")}>Address</Label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="address"
                         type="text"
                         placeholder="Enter your address"
-                        className="pl-10"
+                        className={getFieldStyles("address", "pl-10")}
                         value={formData.address}
                         onChange={(e) =>
                           handleInputChange("address", e.target.value)
                         }
                       />
                     </div>
+                    {fieldErrors.address && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.address}</p>
+                    )}
                   </div>
                 )}
 
                 <div>
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className={getLabelStyles("password")}>Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="password"
                       type={showPassword ? "text" : "password"}
                       placeholder="Enter your password"
-                      className="pl-10 pr-10"
+                      className={getFieldStyles("password", "pl-10 pr-10")}
                       value={formData.password}
                       onChange={(e) =>
                         handleInputChange("password", e.target.value)
@@ -346,30 +528,63 @@ export default function UserLogin() {
                       )}
                     </button>
                   </div>
+                  {isSignUp &&
+                    getPasswordChecks(formData.password).some((rule) => !rule.passed) && (
+                      <div className="mt-2 space-y-1 text-sm">
+                        {getPasswordChecks(formData.password)
+                          .filter((rule) => !rule.passed)
+                          .map((rule) => (
+                            <p key={rule.label} className="text-red-600">
+                              {rule.label}
+                            </p>
+                          ))}
+                      </div>
+                    )}
+                  {fieldErrors.password && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.password}</p>
+                  )}
                 </div>
 
               {isSignUp && (
                 <div>
-                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Label htmlFor="confirmPassword" className={getLabelStyles("confirmPassword")}>Confirm Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input 
                       id="confirmPassword"
                       type="password"
                       placeholder="Confirm your password"
-                      className="pl-10"
+                      className={getFieldStyles("confirmPassword", "pl-10")}
+                      value={formData.confirmPassword}
+                      onChange={(e) =>
+                        handleInputChange("confirmPassword", e.target.value)
+                      }
                     />
                   </div>
+                  {fieldErrors.confirmPassword && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.confirmPassword}</p>
+                  )}
                 </div>
               )}
 
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="remember" checked={formData.isAcceptedTerms} onCheckedChange={() => handleInputChange("isAcceptedTerms", !formData.isAcceptedTerms)} />
-                  <Label htmlFor="remember" className="text-sm">
-                    {isSignUp
-                      ? "I agree to the Terms & Conditions"
-                      : "Remember me"}
-                  </Label>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="remember"
+                      checked={formData.isAcceptedTerms}
+                      onCheckedChange={(checked) =>
+                        handleInputChange("isAcceptedTerms", checked === true)
+                      }
+                    />
+                    <Label htmlFor="remember" className={cn("text-sm", getLabelStyles("isAcceptedTerms"))}>
+                      {isSignUp
+                        ? "I agree to the Terms & Conditions"
+                        : "Remember me"}
+                    </Label>
+                  </div>
+                  {isSignUp && fieldErrors.isAcceptedTerms && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.isAcceptedTerms}</p>
+                  )}
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading || ( !formData.isAcceptedTerms && isSignUp)}>
@@ -405,7 +620,9 @@ export default function UserLogin() {
                     ? "Already have an account?"
                     : "Don't have an account?"}
                   <button
-                    onClick={() => setIsSignUp(!isSignUp)}
+                    onClick={() =>
+                      navigate(isSignUp ? "/login-user" : "/signup-user")
+                    }
                     className="text-primary hover:underline ml-1"
                   >
                     {isSignUp ? "Sign In" : "Sign Up"}

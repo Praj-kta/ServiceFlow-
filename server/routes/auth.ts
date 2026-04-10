@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { sendEmail } from '../utils/email';
+import { extractPincode } from '../utils/location';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
@@ -41,7 +42,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret';
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, phone, address, companyName, experience, category, categories } = req.body;
+    const { name, email, password, role, phone, address, companyName, experience, category, categories, pincode } = req.body;
     const normalizedEmail = (email || '').toString().trim().toLowerCase();
 
     if (!normalizedEmail || !password) {
@@ -67,6 +68,7 @@ router.post('/register', async (req: Request, res: Response) => {
       userData.providerProfile = {
         companyName,
         experience,
+        pincode: pincode || extractPincode(address),
         // support both old single category field and new multi-category array
         category: typeof category === 'string' ? category : undefined,
         categories: Array.isArray(categories)

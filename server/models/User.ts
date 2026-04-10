@@ -16,6 +16,7 @@ const userSchema = new mongoose.Schema({
     category: String,
     categories: [String],
     experience: String,
+    pincode: String,
     skills: [String],
     rating: { type: Number, default: 0 },
     verified: { type: Boolean, default: false },

@@ -25,7 +25,6 @@ import {
   Filter,
   BarChart3,
   PieChart,
-  TrendingUp,
   Calendar,
   DollarSign,
   Phone,

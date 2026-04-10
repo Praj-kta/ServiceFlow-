@@ -58,6 +58,14 @@ import {
 import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
+type RoomDimensions = {
+  width: number;
+  height: number;
+  area: number;
+};
+
+type RoomLayout = Record<string, RoomDimensions>;
+
 export default function DesignGenerator() {
   const [designParams, setDesignParams] = useState({
     plotLength: 40,
@@ -76,7 +84,7 @@ export default function DesignGenerator() {
     roofType: 'flat'
   });
 
-  const [roomLayout, setRoomLayout] = useState({
+  const [roomLayout, setRoomLayout] = useState<RoomLayout>({
     livingRoom: { width: 0, height: 0, area: 0 },
     masterBedroom: { width: 0, height: 0, area: 0 },
     bedroom2: { width: 0, height: 0, area: 0 },
@@ -195,7 +203,7 @@ export default function DesignGenerator() {
     }
 
     // Convert areas to dimensions (assuming rectangular rooms)
-    const newRoomLayout = {};
+    const newRoomLayout: RoomLayout = {};
     if (designParams.numberBathrooms === 1) {
       if (roomAreas['bathroom2']) {
         roomAreas['bathroom1'] = (roomAreas['bathroom1'] || 0) + roomAreas['bathroom2'];
@@ -203,7 +211,7 @@ export default function DesignGenerator() {
       }
     }
 
-    Object.entries(roomAreas).forEach(([room, area]) => {
+    Object.entries(roomAreas as Record<string, number>).forEach(([room, area]) => {
       const width = Math.sqrt(area * 1.2); // Slightly rectangular
       const height = area / width;
       newRoomLayout[room] = {

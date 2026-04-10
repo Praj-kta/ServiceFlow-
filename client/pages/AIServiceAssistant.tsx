@@ -53,6 +53,11 @@ import { useState, useRef, useEffect } from "react";
 import { api } from "../lib/api";
 import BackButton from "../components/BackButton";
 
+type ChatResponse = {
+  reply: string;
+  suggestions?: string[];
+};
+
 export default function AIServiceAssistant() {
   const [messages, setMessages] = useState([
     {
@@ -144,7 +149,7 @@ export default function AIServiceAssistant() {
     setIsTyping(true);
 
     try {
-      const res = await api.post('/ai/chat', {
+      const res = await api.post<ChatResponse>('/ai/chat', {
         message: inputMessage,
         context: { userId: 'test-user-1' } // Mock user ID
       });

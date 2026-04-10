@@ -296,7 +296,10 @@ export default function BookMachineService() {
   };
 
   const applyPromoCode = () => {
-    const promoCodes = {
+    const promoCodes: Record<
+      string,
+      { discount: number; type: "fixed" | "percentage"; maxDiscount?: number }
+    > = {
       'FIRST20': { discount: 20, type: 'percentage', maxDiscount: 500 },
       'SAVE200': { discount: 200, type: 'fixed' },
       'APPLIANCE15': { discount: 15, type: 'percentage', maxDiscount: 300 }

@@ -65,16 +65,41 @@ const timeSlots = [
 ];
 
 interface Provider {
-  id: number;
+  providerId: string;
+  serviceId: string;
   name: string;
+  companyName: string;
   rating: number;
   reviews: number;
   location: string;
+  pincode: string;
   responseTime: string;
-  price: string;
+  price: string | number;
   features: string[];
+  experience: string;
+  phone: string;
   image: string;
 }
+
+interface ServiceOption {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  price: number;
+  rating: number;
+}
+
+const normalizeText = (value: string) => value.trim().toLowerCase();
+
+const toPriceNumber = (value: unknown) => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^\d.]/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
 
 export default function BookService() {
   const navigate = useNavigate();
@@ -90,16 +115,18 @@ export default function BookService() {
   const [loading, setLoading] = useState(false);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [userLocation, setUserLocation] = useState("");
+  const [userPincode, setUserPincode] = useState("");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedService, setSelectedService] = useState("");
-  const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [isUrgent, setIsUrgent] = useState(false);
 
   const [allServices, setAllServices] = useState<any[]>([]);
-  const [categoryServices, setCategoryServices] = useState<any[]>([]);
-  const [filteredServices, setFilteredServices] = useState<any[]>([]);
+  const [categoryServices, setCategoryServices] = useState<ServiceOption[]>([]);
+  const [availableProviders, setAvailableProviders] = useState<Provider[]>([]);
+  const [providerLoading, setProviderLoading] = useState(false);
 
   // Error messages for validation
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -121,21 +148,96 @@ export default function BookService() {
     api.get<any[]>('/services')
       .then(data => {
         setAllServices(data);
-        setFilteredServices(data);
       })
       .catch(err => console.error('Failed to fetch services', err));
   }, []);
+
+  const buildServiceOptions = (category: string) => {
+    const uniqueServices = new Map<string, ServiceOption>();
+
+    allServices.forEach((service) => {
+      const serviceCategory = String(service.category || "");
+      if (normalizeText(serviceCategory) !== normalizeText(category)) {
+        return;
+      }
+
+      const serviceAreas = Array.isArray(service.areasCovered) ? service.areasCovered : [];
+      const matchesLocation =
+        !userLocation ||
+        serviceAreas.length === 0 ||
+        serviceAreas.some((area: string) => {
+          const normalizedArea = normalizeText(area);
+          const normalizedLocation = normalizeText(userLocation);
+          return (
+            normalizedArea.includes(normalizedLocation) ||
+            normalizedLocation.includes(normalizedArea)
+          );
+        });
+
+      if (!matchesLocation) {
+        return;
+      }
+
+      const key = `${normalizeText(serviceCategory)}::${normalizeText(String(service.title || ""))}`;
+      const nextOption: ServiceOption = {
+        id: key,
+        title: String(service.title || "Untitled service"),
+        description: String(service.description || ""),
+        category: serviceCategory,
+        price: toPriceNumber(service.price),
+        rating: Number(service.rating || 0),
+      };
+
+      const existingOption = uniqueServices.get(key);
+      if (!existingOption || nextOption.rating >= existingOption.rating) {
+        uniqueServices.set(key, nextOption);
+      }
+    });
+
+    return Array.from(uniqueServices.values()).sort((a, b) => a.title.localeCompare(b.title));
+  };
+
+  const fetchMatchingProviders = async (serviceOption?: ServiceOption) => {
+    const activeService = serviceOption || categoryServices.find((service) => service.id === selectedService);
+
+    if (!activeService || !selectedCategory || !userLocation.trim() || !userPincode.trim()) {
+      setAvailableProviders([]);
+      return;
+    }
+
+    try {
+      setProviderLoading(true);
+      const params = new URLSearchParams({
+        category: selectedCategory,
+        serviceTitle: activeService.title,
+        location: userLocation.trim(),
+        pincode: userPincode.trim(),
+      });
+
+      const providers = await api.get<Provider[]>(`/provider/search?${params.toString()}`);
+      setAvailableProviders(Array.isArray(providers) ? providers : []);
+    } catch (error) {
+      console.error("Failed to fetch matching providers", error);
+      setAvailableProviders([]);
+    } finally {
+      setProviderLoading(false);
+    }
+  };
 
   // Validation functions
   const validateLocationAccess = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!locationPermissionGranted) {
-      newErrors.location = "Location permission is required to proceed. Please grant access.";
+    if (!locationPermissionGranted && !userLocation.trim()) {
+      newErrors.location = "Enable location access or enter your location manually.";
     }
     
     if (!userLocation.trim()) {
       newErrors.userLocation = "Please enter or enable your location.";
+    }
+
+    if (!/^\d{6}$/.test(userPincode.trim())) {
+      newErrors.userPincode = "Please enter a valid 6-digit pincode.";
     }
     
     setErrors(newErrors);
@@ -211,7 +313,9 @@ export default function BookService() {
   const validateProviderSelection = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!selectedProviderId) {
+    if (!availableProviders.length) {
+      newErrors.provider = "No nearby providers are available for this location and pincode.";
+    } else if (!selectedProviderId) {
       newErrors.provider = "Please select a service provider.";
     }
     
@@ -273,32 +377,32 @@ export default function BookService() {
     setCustomerInfo({ ...customerInfo, name: value });
     const validation = validateNameField(value);
     setFieldValidation({ ...fieldValidation, name: validation });
-    if (errors.customerName) setErrors({ ...errors, customerName: '' });
+    if (errors.name) setErrors({ ...errors, name: '' });
   };
 
   const handlePhoneChange = (value: string) => {
     setCustomerInfo({ ...customerInfo, phone: value });
     const validation = validatePhoneField(value);
     setFieldValidation({ ...fieldValidation, phone: validation });
-    if (errors.customerPhone) setErrors({ ...errors, customerPhone: '' });
+    if (errors.phone) setErrors({ ...errors, phone: '' });
   };
 
   const handleEmailChange = (value: string) => {
     setCustomerInfo({ ...customerInfo, email: value });
     const validation = validateEmailField(value);
     setFieldValidation({ ...fieldValidation, email: validation });
-    if (errors.customerEmail) setErrors({ ...errors, customerEmail: '' });
+    if (errors.email) setErrors({ ...errors, email: '' });
   };
 
   const handleAddressChange = (value: string) => {
     setCustomerInfo({ ...customerInfo, address: value });
     const validation = validateAddressField(value);
     setFieldValidation({ ...fieldValidation, address: validation });
-    if (errors.customerAddress) setErrors({ ...errors, customerAddress: '' });
+    if (errors.address) setErrors({ ...errors, address: '' });
   };
 
   // Mock providers filtered by location and service
-  const providers: Provider[] = [
+  const _legacyProviders = [
     {
       id: 1,
       name: "ServicePro Experts",
@@ -334,8 +438,9 @@ export default function BookService() {
     }
   ];
 
-  // Get unique categories from services
-  const uniqueCategories = Array.from(new Set(allServices.map(s => s.category))).filter(Boolean);
+  const uniqueCategories = Array.from(
+    new Set(allServices.map((service) => String(service.category || "").trim()).filter(Boolean)),
+  );
 
   const handleLocationPermission = () => {
     if (navigator.geolocation) {
@@ -358,15 +463,13 @@ export default function BookService() {
     }
   };
 
-  const getLocationNameFromCoords = async (lat: number, lng: number) => {
+  const getLocationDetailsFromCoords = async (lat: number, lng: number) => {
     try {
-      // Using OpenStreetMap's reverse geocoding (free, no API key required)
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
       );
       const data = await response.json();
       
-      // Extract city/town or area name
       const address = data.address || {};
       const locationName = 
         address.city || 
@@ -376,18 +479,23 @@ export default function BookService() {
         address.suburb ||
         data.display_name?.split(',')[0] ||
         'Current Location';
-      
-      return locationName;
+
+      const pincode = address.postcode?.replace(/\D/g, "").slice(0, 6) || "";
+
+      return { locationName, pincode };
     } catch (error) {
       console.error("Geocoding error:", error);
-      return 'Current Location';
+      return { locationName: 'Current Location', pincode: '' };
     }
   };
 
   const handleConfirmLocation = async () => {
     if (locationCoords) {
-      const locationName = await getLocationNameFromCoords(locationCoords.lat, locationCoords.lng);
+      const { locationName, pincode } = await getLocationDetailsFromCoords(locationCoords.lat, locationCoords.lng);
       setUserLocation(locationName);
+      if (pincode) {
+        setUserPincode(pincode);
+      }
       setLocationPermissionGranted(true);
       setShowLocationDialog(false);
       setErrors({});
@@ -395,19 +503,12 @@ export default function BookService() {
   };
 
   const handleCategorySelect = (category: string) => {
+    const nextServices = buildServiceOptions(category);
     setSelectedCategory(category);
-    // Filter services by category AND location
-    const filtered = allServices.filter(s => {
-      const matchesCategory = s.category === category;
-      const matchesLocation = !s.areasCovered || s.areasCovered.length === 0 || 
-                             s.areasCovered.some(area => 
-                               userLocation.toLowerCase().includes(area.toLowerCase()) ||
-                               area.toLowerCase().includes(userLocation.toLowerCase())
-                             );
-      return matchesCategory && matchesLocation;
-    });
-    setCategoryServices(filtered);
+    setCategoryServices(nextServices);
     setSelectedService("");
+    setSelectedProviderId(null);
+    setAvailableProviders([]);
     setErrors({});
   };
 
@@ -453,13 +554,23 @@ export default function BookService() {
   };
 
   const getSelectedServiceDetails = () => {
-    return categoryServices.find(service => service._id === selectedService);
+    return categoryServices.find(service => service.id === selectedService);
   };
 
+  const selectedProvider = availableProviders.find(
+    (provider) => provider.providerId === selectedProviderId,
+  );
+
+  useEffect(() => {
+    if (currentStep === 6) {
+      fetchMatchingProviders();
+    }
+  }, [currentStep, selectedService, selectedCategory, userLocation, userPincode]);
+
   const calculateEstimatedCost = () => {
-    const serviceDetails = getSelectedServiceDetails();
-    if (!serviceDetails) return 0;
-    const basePrice = serviceDetails.price || 500;
+    const basePrice = selectedProvider
+      ? toPriceNumber(selectedProvider.price)
+      : getSelectedServiceDetails()?.price || 500;
     return isUrgent ? basePrice + 500 : basePrice;
   };
 
@@ -467,27 +578,33 @@ export default function BookService() {
     try {
       setLoading(true);
       const serviceDetails = getSelectedServiceDetails();
+      const activeProvider = selectedProvider;
+
+      if (!serviceDetails || !activeProvider) {
+        setErrors({ provider: "Please select a provider before confirming your booking." });
+        return;
+      }
 
       const bookingData = {
-        serviceId: selectedService,
-        serviceTitle: serviceDetails?.title,
+        serviceId: activeProvider.serviceId,
+        serviceTitle: serviceDetails.title,
         category: selectedCategory,
         date: selectedDate ? format(selectedDate, "yyyy-MM-dd") : "",
         timeSlot: selectedTimeSlot,
         isUrgent: isUrgent,
         location: userLocation,
         fullAddress: customerInfo.address,
+        pincode: userPincode,
         customerName: customerInfo.name,
         customerPhone: customerInfo.phone,
         customerEmail: customerInfo.email,
-        providerId: selectedProviderId,
+        providerId: activeProvider.providerId,
         estimatedCost: calculateEstimatedCost(),
         notes: ""
       };
 
       const saved = await api.post<any>('/bookings', bookingData);
-      alert("Service Booking Confirmed!");
-      navigate('/user-dashboard?tab=bookings');
+      navigate(`/booking-confirmation?booking=${saved._id || saved.id}`);
     } catch (error) {
       console.error('Error creating booking', error);
       alert("Something went wrong. Please try again.");
@@ -654,6 +771,33 @@ export default function BookService() {
               )}
             </div>
 
+            <div>
+              <p className="text-xs text-muted-foreground mb-3 text-center">
+                Enter your pincode to find nearby providers
+              </p>
+              <Input
+                placeholder="Enter 6-digit pincode"
+                value={userPincode}
+                onChange={(e) => {
+                  const nextPincode = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setUserPincode(nextPincode);
+                  setErrors((prev) => {
+                    const nextErrors = { ...prev };
+                    delete nextErrors.userPincode;
+                    return nextErrors;
+                  });
+                }}
+                inputMode="numeric"
+                maxLength={6}
+                className={`transition-all ${
+                  errors.userPincode ? "bg-red-50 border-red-300 focus:bg-red-50 focus:border-red-400" : ""
+                }`}
+              />
+              {errors.userPincode && (
+                <p className="text-xs text-red-600 mt-1">{errors.userPincode}</p>
+              )}
+            </div>
+
             {errors.location && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="text-sm text-red-700">⚠️ {errors.location}</p>
@@ -684,7 +828,7 @@ export default function BookService() {
         onClick={handleNext}
         className="w-full"
         size="lg"
-        disabled={!locationPermissionGranted && !userLocation.trim()}
+        disabled={!userLocation.trim() || userPincode.trim().length !== 6}
       >
         Continue
         <ArrowRight className="h-4 w-4 ml-2" />
@@ -711,7 +855,7 @@ export default function BookService() {
         {uniqueCategories.length > 0 ? (
           uniqueCategories.map((category) => {
             const isSelected = selectedCategory === category;
-            const categoryCount = allServices.filter(s => s.category === category).length;
+            const categoryCount = buildServiceOptions(category).length;
 
             return (
               <Card
@@ -782,18 +926,20 @@ export default function BookService() {
       {categoryServices.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto">
           {categoryServices.map((service) => {
-            const isSelected = selectedService === service._id;
+            const isSelected = selectedService === service.id;
 
             return (
               <Card
-                key={service._id}
+                key={service.id}
                 className={`transition-all border-2 cursor-pointer ${
                   isSelected
                     ? "border-primary bg-primary/5"
                     : "hover:border-primary/50"
                 }`}
                 onClick={() => {
-                  setSelectedService(service._id);
+                  setSelectedService(service.id);
+                  setSelectedProviderId(null);
+                  setAvailableProviders([]);
                   setErrors({});
                 }}
               >
@@ -960,12 +1106,12 @@ export default function BookService() {
         <p className="text-muted-foreground">Help us contact you about your booking</p>
       </div>
 
-      {(errors.customerName || errors.customerPhone || errors.customerEmail || errors.customerAddress) && (
+      {(errors.name || errors.phone || errors.email || errors.address) && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
-          {errors.customerName && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerName}</p>}
-          {errors.customerPhone && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerPhone}</p>}
-          {errors.customerEmail && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerEmail}</p>}
-          {errors.customerAddress && <p className="text-sm font-medium text-red-700">⚠️ {errors.customerAddress}</p>}
+          {errors.name && <p className="text-sm font-medium text-red-700">{errors.name}</p>}
+          {errors.phone && <p className="text-sm font-medium text-red-700">{errors.phone}</p>}
+          {errors.email && <p className="text-sm font-medium text-red-700">{errors.email}</p>}
+          {errors.address && <p className="text-sm font-medium text-red-700">{errors.address}</p>}
         </div>
       )}
 
@@ -1159,66 +1305,93 @@ export default function BookService() {
           </div>
         )}
 
-        <div className="space-y-4">
-          {providers.map((provider) => {
-            const isSelected = selectedProviderId === provider.id;
+        {providerLoading ? (
+          <Card>
+            <CardContent className="p-6 text-center text-muted-foreground">
+              Finding nearby providers for {serviceDetails?.title} in {userLocation} - {userPincode}
+            </CardContent>
+          </Card>
+        ) : availableProviders.length > 0 ? (
+          <div className="space-y-4">
+            {availableProviders.map((provider) => {
+              const isSelected = selectedProviderId === provider.providerId;
 
-            return (
-              <Card
-                key={provider.id}
-                className={`transition-all border-2 cursor-pointer ${
-                  isSelected ? "border-primary bg-primary/5" : "hover:border-primary/50"
-                }`}
-                onClick={() => {
-                  setSelectedProviderId(provider.id);
-                  if (errors.provider) setErrors({ ...errors, provider: '' });
-                }}
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-start space-x-4">
-                    <Avatar>
-                      <AvatarImage src={provider.image} />
-                      <AvatarFallback>{provider.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold text-lg">{provider.name}</h3>
-                          <div className="flex items-center space-x-4 mt-2">
-                            <div className="flex items-center">
-                              <Star className="h-4 w-4 text-yellow-500 mr-1" />
-                              <span className="font-medium">{provider.rating}</span>
-                              <span className="text-xs text-muted-foreground ml-1">({provider.reviews} reviews)</span>
-                            </div>
-                            <div className="flex items-center text-sm text-muted-foreground">
-                              <MapPin className="h-4 w-4 mr-1" />
-                              {provider.location}
-                            </div>
-                            <div className="flex items-center text-sm text-muted-foreground">
-                              <Clock className="h-4 w-4 mr-1" />
-                              {provider.responseTime}
+              return (
+                <Card
+                  key={`${provider.providerId}-${provider.serviceId}`}
+                  className={`transition-all border-2 cursor-pointer ${
+                    isSelected ? "border-primary bg-primary/5" : "hover:border-primary/50"
+                  }`}
+                  onClick={() => {
+                    setSelectedProviderId(provider.providerId);
+                    if (errors.provider) setErrors({ ...errors, provider: '' });
+                  }}
+                >
+                  <CardContent className="p-6">
+                    <div className="flex items-start space-x-4">
+                      <Avatar>
+                        <AvatarImage src={provider.image} />
+                        <AvatarFallback>{provider.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="font-semibold text-lg">{provider.name}</h3>
+                            <p className="text-sm text-muted-foreground">{provider.companyName}</p>
+                            <div className="flex flex-wrap items-center gap-4 mt-2">
+                              <div className="flex items-center">
+                                <Star className="h-4 w-4 text-yellow-500 mr-1" />
+                                <span className="font-medium">{provider.rating.toFixed(1)}</span>
+                                <span className="text-xs text-muted-foreground ml-1">({provider.reviews} reviews)</span>
+                              </div>
+                              <div className="flex items-center text-sm text-muted-foreground">
+                                <MapPin className="h-4 w-4 mr-1" />
+                                {provider.location}
+                              </div>
+                              <div className="flex items-center text-sm text-muted-foreground">
+                                <Clock className="h-4 w-4 mr-1" />
+                                {provider.responseTime}
+                              </div>
                             </div>
                           </div>
+                          {isSelected && <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />}
                         </div>
-                        {isSelected && <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />}
-                      </div>
 
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {provider.features.map((feature) => (
-                          <Badge key={feature} variant="secondary" className="text-xs">
-                            {feature}
-                          </Badge>
-                        ))}
-                      </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {provider.experience && (
+                            <Badge variant="outline" className="text-xs">
+                              {provider.experience} experience
+                            </Badge>
+                          )}
+                          {provider.pincode && (
+                            <Badge variant="outline" className="text-xs">
+                              Pincode {provider.pincode}
+                            </Badge>
+                          )}
+                          {provider.features.slice(0, 3).map((feature) => (
+                            <Badge key={feature} variant="secondary" className="text-xs">
+                              {feature}
+                            </Badge>
+                          ))}
+                        </div>
 
-                      <p className="text-sm font-medium text-primary mt-3">{provider.price}</p>
+                        <p className="text-sm font-medium text-primary mt-3">
+                          Starting at Rs {toPriceNumber(provider.price).toLocaleString("en-IN")}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="p-6 text-center text-muted-foreground">
+              No nearby providers are available for this service in {userLocation} ({userPincode}) right now.
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-4">
@@ -1283,11 +1456,17 @@ export default function BookService() {
             </div>
             <div className="flex justify-between py-3 border-b">
               <span className="text-muted-foreground">Location:</span>
-              <span className="font-medium">{userLocation}</span>
+              <span className="font-medium">{userLocation} - {userPincode}</span>
             </div>
             <div className="flex justify-between py-3">
               <span className="text-muted-foreground">Customer:</span>
               <span className="font-medium">{customerInfo.name}</span>
+            </div>
+            <div className="flex justify-between py-3 border-t">
+              <span className="text-muted-foreground">Provider:</span>
+              <span className="font-medium">
+                {selectedProvider ? `${selectedProvider.name} (${selectedProvider.companyName})` : "Not selected"}
+              </span>
             </div>
           </CardContent>
         </Card>

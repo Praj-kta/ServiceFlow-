@@ -703,7 +703,7 @@ export default function VehicleServices() {
                       </div>
                       <div>
                         <div className="text-sm text-muted-foreground">Availability</div>
-                        <div className="font-medium">{provider.availability}</div>
+                        <div className="font-medium">{(provider as any).availability || "Available today"}</div>
                       </div>
                     </div>
 

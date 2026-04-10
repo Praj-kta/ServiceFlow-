@@ -27,7 +27,7 @@ import {
   RotateCcw,
   Plus,
   Minus,
-  Equals,
+  Equal,
   Zap,
   Target,
   CheckCircle,
@@ -46,6 +46,27 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+type CostLine = {
+  quantity?: number;
+  unit?: string;
+  rate: number;
+  cost: number;
+  days?: number;
+};
+
+type CalculationResults = {
+  materials: Record<string, CostLine>;
+  labor: Record<string, CostLine>;
+  summary: {
+    materialTotal: number;
+    laborTotal: number;
+    overheadCost: number;
+    totalCost: number;
+    costPerSqft: number;
+    timeline: number;
+  };
+};
+
 export default function AutoCalculate() {
   const [projectType, setProjectType] = useState('residential');
   const [calculationMode, setCalculationMode] = useState('materials');
@@ -56,12 +77,12 @@ export default function AutoCalculate() {
     bhk: '3bhk',
     quality: 'standard',
     location: 'mumbai',
-    includeParkig: true,
+    includeParking: true,
     includeGarden: false,
     roofType: 'flat'
   });
 
-  const [results, setResults] = useState(null);
+  const [results, setResults] = useState<CalculationResults | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
 
   const materialCalculations = {
@@ -101,8 +122,8 @@ export default function AutoCalculate() {
       const locationFactor = locationFactors[projectData.location] || 1.0;
       const qualityFactor = projectData.quality === 'premium' ? 1.3 : projectData.quality === 'luxury' ? 1.6 : 1.0;
       
-      const materials = {};
-      const labor = {};
+      const materials: Record<string, CostLine> = {};
+      const labor: Record<string, CostLine> = {};
       
       // Calculate materials
       Object.entries(materialCalculations).forEach(([material, data]) => {

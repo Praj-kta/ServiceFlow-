@@ -47,7 +47,7 @@ import AuthModal from "../components/AuthModal";
 export default function Index() {
   const [selectedLocation, setSelectedLocation] = useState("Select Location");
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [authType, setAuthType] = useState("signin");
+  const [authType, setAuthType] = useState<"signin" | "getstarted">("signin");
   const [demoModalOpen, setDemoModalOpen] = useState(false);
   const [aiChatModalOpen, setAiChatModalOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);

@@ -33,12 +33,24 @@ import {
   Target,
   Award,
   Bell,
-  Wallet
+  Wallet,
+  Receipt,
+  User,
+  HomeIcon
 } from "lucide-react";
-import { useState } from "react";
-import { useEffect } from "react";
-import { requireAuth, requireRole, getUserId } from "../lib/auth";
+import { useCallback, useEffect, useState } from "react";
+import { requireAuth, requireRole, getUserId, logout } from "../lib/auth";
 import { api } from "@/lib/api";
+
+type ServiceFormState = {
+  name: string;
+  description: string;
+  category: string;
+  price: string;
+  status: "active" | "inactive";
+};
+
+const personNameRegex = /^[A-Za-z\s.'-]+$/;
 
 export default function ProviderDashboard() {
   // Authentication check
@@ -95,6 +107,15 @@ export default function ProviderDashboard() {
   const [addPayOpen, setAddPayOpen] = useState(false);
   const [otpOpen, setOtpOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
+  const [professionalForm, setProfessionalForm] = useState({
+    name: "ServiceFlow Provider",
+    company: "GreenClean Services",
+    skills: "Cleaning, AC Repair, Plumbing",
+    certifications: "ISO, Safety",
+  });
+  const [professionalErrors, setProfessionalErrors] = useState({
+    name: "",
+  });
 
   useEffect(() => {
     // Fetch stats
@@ -174,9 +195,10 @@ export default function ProviderDashboard() {
   const mapServiceToUi = (service: any) => ({
     id: service._id || service.id,
     name: service.title || service.name || "Untitled Service",
+    description: service.description || "",
     category: service.category || "General",
     price: typeof service.price === "string" ? service.price : service.price != null ? `Rs ${service.price}` : "Rs 0",
-    status: service.status || "active",
+    status: service.status === "paused" ? "inactive" : service.status || "active",
     bookings: service.bookings ?? 0,
   });
 
@@ -191,6 +213,22 @@ export default function ProviderDashboard() {
   });
 
   const [providerCategories, setProviderCategories] = useState<string[]>([]);
+
+  const fetchProviderServices = useCallback(() => {
+    if (!providerId) return Promise.resolve();
+
+    return api.get('/services')
+      .then((data: any[]) => {
+        const providerServices = Array.isArray(data)
+          ? data.filter((s) => String(s.providerId) === String(providerId))
+          : [];
+
+        setServicesState(providerServices.map(mapServiceToUi));
+      })
+      .catch((err) => {
+        console.error('Failed to load services', err);
+      });
+  }, [providerId]);
 
   useEffect(() => {
     api.get<any>("/auth/me")
@@ -214,22 +252,8 @@ export default function ProviderDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!providerId) return;
-
-    api.get('/services')
-      .then((data: any[]) => {
-        const providerServices = Array.isArray(data)
-          ? data.filter((s) => String(s.providerId) === String(providerId))
-          : [];
-
-        if (providerServices.length) {
-          setServicesState(providerServices.map(mapServiceToUi));
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load services', err);
-      });
-  }, [providerId]);
+    fetchProviderServices();
+  }, [fetchProviderServices]);
 
   const handleAccept = (id: string) => {
     api.put(`/bookings/${id}/status`, { status: "confirmed" }).then((updated: any) => {
@@ -290,9 +314,9 @@ export default function ProviderDashboard() {
   };
 
   api.post("/services", payload)
-    .then((created: any) => {
-      const entry = mapServiceToUi(created);
-      setServicesState((prev) => [entry, ...prev]);
+    .then(async () => {
+      await fetchProviderServices();
+      window.dispatchEvent(new CustomEvent("services-updated"));
     })
     .catch((err) => {
       console.error("Failed to create service", err);
@@ -313,24 +337,58 @@ export default function ProviderDashboard() {
 const handleEditServiceSubmit = () => {
     if (!selectedService) return;
 
+    const title = String(selectedService.name || "").trim();
     const category = String(selectedService.category || "").trim();
-    if (!providerCategories.includes(category)) return;
+    const price = String(selectedService.price || "").trim();
+
+    if (!title || !category || !price) {
+      alert("Please fill all required fields");
+      return;
+    }
 
     const payload = {
-      title: selectedService.name,
+      title,
+      description: String(selectedService.description || "").trim(),
       category,
-      price: String(selectedService.price || "").trim(),
+      price,
     };
 
     api.put(`/services/${selectedService.id}`, payload)
-      .then((updated: any) => {
-        const updatedUi = mapServiceToUi(updated);
-        setServicesState(prev => prev.map(s => s.id === updatedUi.id ? updatedUi : s));
+      .then(async () => {
+        await fetchProviderServices();
+        window.dispatchEvent(new CustomEvent("services-updated"));
         setEditServiceOpen(false);
+        setSelectedService(null);
       })
       .catch(err => {
         console.error('Failed to update service', err);
         alert('Error updating service');
+      });
+  };
+const toggleServiceStatus = (service: any) => {
+    const nextStatus = service.status === "active" ? "inactive" : "active";
+
+    api.put(`/services/${service.id}`, { status: nextStatus })
+      .then(async () => {
+        await fetchProviderServices();
+        window.dispatchEvent(new CustomEvent("services-updated"));
+      })
+      .catch((err) => {
+        console.error("Failed to update service status", err);
+        alert("Could not update service status");
+      });
+  };
+const deleteService = (id: string) => {
+    if (!window.confirm("Delete this service?")) return;
+
+    api.delete(`/services/${id}`)
+      .then(async () => {
+        await fetchProviderServices();
+        window.dispatchEvent(new CustomEvent("services-updated"));
+      })
+      .catch((err) => {
+        console.error("Failed to delete service", err);
+        alert("Could not delete service");
       });
   };
 const handleWithdraw = () => {
@@ -340,6 +398,33 @@ const handleWithdraw = () => {
     setWithdrawOpen(false);
     setWithdrawAmount("");
     alert("Withdrawal request submitted");
+  };
+
+  const handleProfessionalInputChange = (field: string, value: string) => {
+    setProfessionalForm((prev) => ({ ...prev, [field]: value }));
+    if (field === "name") {
+      setProfessionalErrors((prev) => ({ ...prev, name: "" }));
+    }
+  };
+
+  const handleProfessionalSave = () => {
+    const trimmedName = professionalForm.name.trim();
+
+    if (!trimmedName) {
+      setProfessionalErrors({ name: "Name is required" });
+      return;
+    }
+
+    if (!personNameRegex.test(trimmedName)) {
+      setProfessionalErrors({
+        name: "Name should contain letters only, not numbers",
+      });
+      return;
+    }
+
+    setProfessionalErrors({ name: "" });
+    setProfessionalForm((prev) => ({ ...prev, name: trimmedName }));
+    alert("Professional info saved");
   };
 
   return (
@@ -369,7 +454,7 @@ const handleWithdraw = () => {
             <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
               Home
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { window.location.href = '/'; }}>
+            <Button variant="outline" size="sm" onClick={() => { logout(); }}>
               <LogOut className="h-4 w-4 mr-2" />
               Logout
             </Button>
@@ -407,28 +492,28 @@ const handleWithdraw = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="overview" className="flex items-center">
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="jobs" className="flex items-center">
-              <Briefcase className="h-4 w-4 mr-2" />
-              Jobs
-            </TabsTrigger>
-            <TabsTrigger value="services" className="flex items-center">
-              <Settings className="h-4 w-4 mr-2" />
-              My Services
-            </TabsTrigger>
-            <TabsTrigger value="earnings" className="flex items-center">
-              <DollarSign className="h-4 w-4 mr-2" />
-              Earnings
-            </TabsTrigger>
-            <TabsTrigger value="profile" className="flex items-center">
-              <Users className="h-4 w-4 mr-2" />
-              Profile
-            </TabsTrigger>
-          </TabsList>
+         <TabsList className="grid w-full grid-cols-5 gap-1">
+  <TabsTrigger value="overview" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <HomeIcon className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Overview</span>
+  </TabsTrigger>
+  <TabsTrigger value="services" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <Settings className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Services</span>
+  </TabsTrigger>
+  <TabsTrigger value="bookings" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <Calendar className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Bookings</span>
+  </TabsTrigger>
+  <TabsTrigger value="payments" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <Receipt className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Payments</span>
+  </TabsTrigger>
+  <TabsTrigger value="profile" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2">
+    <User className="h-5 w-5" />
+    <span className="text-xs sm:text-sm hidden sm:inline">Profile</span>
+  </TabsTrigger>
+</TabsList>
 
           {/* Overview Tab */}
           <TabsContent value="overview">
@@ -1028,12 +1113,41 @@ const handleWithdraw = () => {
                       <div className="p-4 border rounded-lg">
                         <div className="font-medium mb-2">Professional Info</div>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          <Input placeholder="Name" defaultValue="ServiceFlow Provider" />
-                          <Input placeholder="Company" defaultValue="GreenClean Services" />
-                          <Input placeholder="Skills" defaultValue="Cleaning, AC Repair, Plumbing" />
-                          <Input placeholder="Certifications" defaultValue="ISO, Safety" />
+                          <Input
+                            placeholder="Name"
+                            value={professionalForm.name}
+                            onChange={(e) =>
+                              handleProfessionalInputChange("name", e.target.value)
+                            }
+                          />
+                          <Input
+                            placeholder="Company"
+                            value={professionalForm.company}
+                            onChange={(e) =>
+                              handleProfessionalInputChange("company", e.target.value)
+                            }
+                          />
+                          {professionalErrors.name && (
+                            <div className="col-span-2 text-sm text-red-600">
+                              {professionalErrors.name}
+                            </div>
+                          )}
+                          <Input
+                            placeholder="Skills"
+                            value={professionalForm.skills}
+                            onChange={(e) =>
+                              handleProfessionalInputChange("skills", e.target.value)
+                            }
+                          />
+                          <Input
+                            placeholder="Certifications"
+                            value={professionalForm.certifications}
+                            onChange={(e) =>
+                              handleProfessionalInputChange("certifications", e.target.value)
+                            }
+                          />
                         </div>
-                        <div className="flex justify-end gap-2 mt-3"><Button variant="outline" onClick={() => alert('Professional info saved')}>Save</Button></div>
+                        <div className="flex justify-end gap-2 mt-3"><Button variant="outline" onClick={handleProfessionalSave}>Save</Button></div>
                       </div>
                       <div className="p-4 border rounded-lg">
                         <div className="font-medium mb-2">Design Uploads</div>
@@ -1097,7 +1211,9 @@ const handleWithdraw = () => {
                     <div className="flex items-center justify-between"><span>Account Security</span><Badge variant="secondary">2FA Enabled</Badge></div>
                     <div className="flex items-center justify-between"><span>Profile Visibility</span><Badge variant="secondary">Public</Badge></div>
                     <div className="flex items-center justify-between"><span>Help & Policies</span><Button size="sm" variant="outline">Contact Admin</Button></div>
-                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={() => { window.location.href = '/'; }}>Sign Out</Button></div>
+
+                    <div className="flex items-center justify-between"><span>Logout</span><Button size="sm" variant="outline" onClick={logout}>Sign Out</Button></div>
+
                   </CardContent>
                 </Card>
               </div>

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { Booking } from '../models/Booking';
 import { requireAuth } from '../middleware/auth';
+import { Service } from '../models/Service';
 
 const router = Router();
 
@@ -28,7 +29,26 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     // Ensure booking is created by the authenticated user
     const tokenUser: any = (req as any).user;
-    const booking = new Booking({ ...req.body, userId: tokenUser.userId });
+    const service = await Service.findById(req.body.serviceId);
+
+    if (!service) {
+      return res.status(400).json({ message: 'Selected service was not found' });
+    }
+
+    if (
+      req.body.providerId &&
+      String(service.providerId) !== String(req.body.providerId)
+    ) {
+      return res.status(400).json({ message: 'Selected provider does not match the chosen service' });
+    }
+
+    const booking = new Booking({
+      ...req.body,
+      userId: tokenUser.userId,
+      providerId: service.providerId,
+      serviceTitle: req.body.serviceTitle || service.title,
+      category: req.body.category || service.category,
+    });
     await booking.save();
     res.status(201).json(booking);
   } catch (error) {
@@ -60,11 +80,39 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
  */
 router.get('/user/:userId', async (req: Request, res: Response) => {
   try {
-    const bookings = await Booking.find({ userId: req.params.userId }).populate('serviceId');
+    const bookings = await Booking.find({ userId: req.params.userId })
+      .populate('serviceId')
+      .populate('providerId', 'name phone address providerProfile');
     res.json(bookings);
   } catch (error) {
 
     res.status(500).json({ message: 'Error fetching bookings', error });
+  }
+});
+
+router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const tokenUser: any = (req as any).user;
+    const booking = await Booking.findById(req.params.id)
+      .populate('serviceId')
+      .populate('providerId', 'name phone address providerProfile')
+      .populate('userId', 'name email phone address');
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    if (
+      String(booking.userId?._id || booking.userId) !== tokenUser.userId &&
+      String(booking.providerId?._id || booking.providerId) !== tokenUser.userId &&
+      tokenUser.role !== 'admin'
+    ) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    res.json(booking);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching booking', error });
   }
 });
 // Update booking status

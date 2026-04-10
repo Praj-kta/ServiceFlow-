@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Zap,
   Eye,
+  ArrowRight,
   Download,
   Share2,
   Save,
@@ -53,7 +54,7 @@ export default function VastuDetection() {
   const [uploadedImage, setUploadedImage] = useState(null);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResults, setAnalysisResults] = useState(null);
+  const [analysisResults, setAnalysisResults] = useState<any>(null);
 
   const steps = [
     { id: 1, title: "Upload Floor Plan", icon: Upload },
@@ -375,23 +376,24 @@ export default function VastuDetection() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(analysisResults?.directions || {}).map(([direction, data]) => {
+              const directionData = data as any;
               const dirInfo = directions.find(d => d.name.toLowerCase().replace('-', '').includes(direction));
               return (
                 <div key={direction} className="p-4 border rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 rounded-full ${
-                        data.status === 'excellent' ? 'bg-green-500' :
-                        data.status === 'good' ? 'bg-blue-500' :
-                        data.status === 'needs_improvement' ? 'bg-yellow-500' : 'bg-red-500'
+                        directionData.status === 'excellent' ? 'bg-green-500' :
+                        directionData.status === 'good' ? 'bg-blue-500' :
+                        directionData.status === 'needs_improvement' ? 'bg-yellow-500' : 'bg-red-500'
                       }`}></div>
                       <h4 className="font-medium capitalize">{direction}</h4>
                     </div>
-                    <Badge variant="outline">{data.score}%</Badge>
+                    <Badge variant="outline">{directionData.score}%</Badge>
                   </div>
                   <div className="text-sm space-y-1">
-                    <div><span className="font-medium">Room:</span> {data.room}</div>
-                    <div className="text-muted-foreground">{data.feedback}</div>
+                    <div><span className="font-medium">Room:</span> {directionData.room}</div>
+                    <div className="text-muted-foreground">{directionData.feedback}</div>
                   </div>
                 </div>
               );
@@ -410,24 +412,26 @@ export default function VastuDetection() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {Object.entries(analysisResults?.elements || {}).map(([element, data]) => (
+            {Object.entries(analysisResults?.elements || {}).map(([element, data]) => {
+              const elementData = data as any;
+              return (
               <div key={element} className="flex items-center justify-between p-3 border rounded-lg">
                 <div className="flex-1">
                   <div className="flex items-center space-x-3">
                     <div className="capitalize font-medium">{element}</div>
-                    <Badge variant={data.compliance === 'good' ? 'default' : 'secondary'}>
-                      {data.compliance}
+                    <Badge variant={elementData.compliance === 'good' ? 'default' : 'secondary'}>
+                      {elementData.compliance}
                     </Badge>
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
-                    Locations: {data.locations.join(', ')}
+                    Locations: {elementData.locations.join(', ')}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold">{data.score}%</div>
+                  <div className="font-bold">{elementData.score}%</div>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </CardContent>
       </Card>
